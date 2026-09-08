@@ -29,14 +29,18 @@ class AppTests(unittest.TestCase):
         _, usage = load_workbook(source.read_bytes())
         app = AppTest.from_file("app.py", default_timeout=30).run()
         app.selectbox(key="summary_view").set_value("Quarterly").run()
-        app.selectbox(key="summary_quarter").set_value(2).run()
-        expected = credit_sum(usage.loc[(usage.date >= pd.Timestamp("2026-04-01")) &
+        app.selectbox(key="summary_start_quarter").set_value(pd.Period("2026Q1", freq="Q")).run()
+        app.selectbox(key="summary_end_quarter").set_value(pd.Period("2026Q2", freq="Q")).run()
+        expected = credit_sum(usage.loc[(usage.date >= pd.Timestamp("2026-01-01")) &
                                        (usage.date < pd.Timestamp("2026-07-01")), "credits_used"])
         self.assertEqual(app.metric[4].value, f"{expected:,.1f}")
         self.assertFalse(app.exception)
         app.selectbox(key="summary_view").set_value("Monthly").run()
-        app.selectbox(key="summary_month").set_value(12).run()
-        self.assertTrue(any("No usage records" in i.value for i in app.info))
+        app.selectbox(key="summary_start_month").set_value(pd.Period("2026-01", freq="M")).run()
+        app.selectbox(key="summary_end_month").set_value(pd.Period("2026-05", freq="M")).run()
+        expected = credit_sum(usage.loc[(usage.date >= pd.Timestamp("2026-01-01")) &
+                                       (usage.date < pd.Timestamp("2026-06-01")), "credits_used"])
+        self.assertEqual(app.metric[4].value, f"{expected:,.1f}")
         self.assertFalse(app.exception)
 
     def test_priority_card_opens_details_tab(self):
@@ -104,12 +108,11 @@ class AppTests(unittest.TestCase):
         self.assertEqual(app.selectbox(key="detail_customer").value, "CUST-01")
         self.assertFalse(app.exception)
 
-    def test_ai_failure_falls_back(self):
-        with patch.dict(os.environ, {"OPENAI_API_KEY": "test-placeholder"}), patch("briefs.generate_ai_brief", side_effect=RuntimeError("simulated failure")):
+    def test_ai_brief_is_not_rendered(self):
+        with patch.dict(os.environ, {"OPENAI_API_KEY": "test-placeholder"}):
             app = AppTest.from_file("app.py", default_timeout=30).run()
-            next(b for b in app.button if b.label == "Generate Finance Brief").click().run()
             self.assertFalse(app.exception)
-            self.assertTrue(any("failed validation" in w.value for w in app.warning))
+            self.assertFalse(any(b.label == "Generate Finance Brief" for b in app.button))
 
     def test_invalid_workbook_path(self):
         app = AppTest.from_file("app.py", default_timeout=30).run()

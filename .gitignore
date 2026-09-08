@@ -3,3 +3,7 @@ __pycache__/
 .env
 .streamlit/secrets.toml
 *.log
+.codex-pptx-build/
+.codex-finalizer/
+.chart-data-*/
+outputs/

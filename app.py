@@ -31,7 +31,8 @@ import streamlit as st
 from finance import Rules, STATUSES, load_workbook, calculate_accounts, pacing_chart_data, credit_sum
 
 from portfolio import portfolio_chart
-from briefs import deterministic_brief, generate_ai_brief, account_facts
+from reports import build_monthly_report_payload, generate_monthly_report
+from excel_export import build_audit_workbook_payload, generate_audit_workbook
 
 
 
@@ -91,7 +92,7 @@ st.markdown("""<style>
 
 .st-key-kpi_risk [data-testid="stMetric"],
 
-.st-key-kpi_value [data-testid="stMetric"] {background:#F1EEE8;border-color:#DAD6CD;border-top:4px solid #DAD6CD;}
+.st-key-kpi_value [data-testid="stMetric"] {background:#F7F4FF;border-color:#E1D9F0;border-top:4px solid #8271DD;}
 
 [data-baseweb="tab"] {font-weight:650;}
 
@@ -148,6 +149,12 @@ h1 {letter-spacing:-0.035em;} h2 {letter-spacing:-0.02em;}
 .chart-labels {display:flex;justify-content:center;gap:28px;margin-top:-6px;font-size:13px;}
 .chart-labels .contract-label {color:#8E8A96;}
 .chart-labels .usage-label {color:#6550B5;}
+[role="dialog"] {border-radius:24px;border:1px solid #E3DDF2;box-shadow:0 18px 55px rgba(73,54,122,.20);overflow:hidden;}
+[role="dialog"]::before {content:"";display:block;height:5px;background:#6550B5;margin:-1rem -1rem 1rem;}
+[role="dialog"] h2 {color:#20313B;letter-spacing:-.02em;}
+.intro-eyebrow {color:#6550B5;font-size:12px;font-weight:750;letter-spacing:.08em;text-transform:uppercase;margin-bottom:6px;}
+.intro-copy {color:#3E4B53;font-size:16px;line-height:1.65;margin:0 0 12px;}
+.intro-detail {background:#F7F4FF;border-radius:10px;padding:12px 14px;color:#574B70;font-size:14px;line-height:1.55;margin-bottom:10px;}
 </style>""", unsafe_allow_html=True)
 
 
@@ -159,6 +166,16 @@ h1 {letter-spacing:-0.035em;} h2 {letter-spacing:-0.02em;}
 def parse_source(data):
 
     return load_workbook(data)
+
+
+@st.cache_data(show_spinner=False, max_entries=6)
+def create_monthly_report(report_payload_json):
+    return generate_monthly_report(json.loads(report_payload_json))
+
+
+@st.cache_data(show_spinner=False, max_entries=6)
+def create_audit_workbook(audit_payload_json):
+    return generate_audit_workbook(json.loads(audit_payload_json))
 
 
 
@@ -189,12 +206,21 @@ def fmt(value, kind="number"):
     return f"{value:,.1f}"
 
 
-
-
-
+@st.dialog("Welcome to Usage & Billing Dashboard", width="medium")
+def show_intro():
+    st.markdown('<div class="intro-eyebrow">Product Finance</div>', unsafe_allow_html=True)
+    st.markdown(
+        '<p class="intro-copy">Use this dashboard to track customer credit consumption against contracted '
+        'entitlements and identify accounts that need immediate attention.</p>',
+        unsafe_allow_html=True)
+    st.markdown(
+        '<div class="intro-detail">Upload a source workbook containing customer contracts and usage to date. '
+        'The application validates the data, flags portfolio exceptions, estimates commercial exposure, and '
+        'provides account-level details and suggested follow-up actions.</div>',
+        unsafe_allow_html=True)
 with st.sidebar:
 
-    st.subheader("Source workbook")
+    st.subheader("Source Workbook")
 
     upload = st.file_uploader("Upload a replacement workbook", type=["xlsx"])
 
@@ -262,6 +288,12 @@ as_of = accounts.as_of_date.iloc[0]
 
 source_hash = sha256(raw).hexdigest()
 
+if "intro_seen" not in st.session_state:
+    # Mark it before opening so dismissing with the X does not make it return
+    # on the next widget rerun. A new browser session receives it again.
+    st.session_state["intro_seen"] = True
+    show_intro()
+
 read_at = datetime.now(timezone.utc)
 
 age_days = (pd.Timestamp.now().normalize() - as_of).days
@@ -271,7 +303,7 @@ snapshot_label = f"Snapshot · {as_of:%b %d, %Y}" + (" · Refresh recommended" i
 with st.sidebar:
     st.caption(snapshot_label)
 
-with st.sidebar.expander("Source information"):
+with st.sidebar.expander("Source Information"):
 
     st.write(source_name)
 
@@ -313,7 +345,7 @@ dashboard_tab, details_tab = st.tabs(["Dashboard", "Customer Details"], key="wor
 
 with dashboard_tab:
 
-    st.markdown("#### Priority alerts")
+    st.markdown("#### Priority Alerts")
 
 
     if "priority_resolutions" not in st.session_state:
@@ -378,34 +410,46 @@ with dashboard_tab:
 
 with dashboard_tab:
 
-    summary_title, view_col, year_col, period_col = st.columns([2, 1, 1, 1])
+    summary_title, view_col, start_col, end_col = st.columns([2, 1, 1.2, 1.2])
     summary_title.markdown("### Usage Summary")
 
-    view = view_col.selectbox("Summary view", ["Annual", "Quarterly", "Monthly"], key="summary_view", label_visibility="collapsed")
+    view = view_col.selectbox("View", ["Annual", "Quarterly", "Monthly"], key="summary_view")
 
     years = list(range(min(contracts.contract_start.min().year, as_of.year), max(contracts.contract_end.max().year, as_of.year) + 1))
 
-    year = year_col.selectbox("Year", years, index=years.index(as_of.year), key="summary_year", label_visibility="collapsed")
-
-    month = 1
-
-    if view == "Quarterly":
-
-        quarter = period_col.selectbox("Quarter", [1, 2, 3, 4], index=(as_of.month - 1) // 3,
-
-                                       format_func=lambda q: f"Q{q}", key="summary_quarter", label_visibility="collapsed")
-
-        month = (quarter - 1) * 3 + 1
-
-    elif view == "Monthly":
-
-        month = period_col.selectbox("Month", list(range(1, 13)), index=as_of.month - 1,
-
-                                     format_func=lambda m: pd.Timestamp(2000, m, 1).strftime("%B"), key="summary_month", label_visibility="collapsed")
-
-    period_start = pd.Timestamp(year, month, 1)
-
-    period_end = period_start + pd.DateOffset(months={"Annual": 12, "Quarterly": 3, "Monthly": 1}[view])
+    if view == "Annual":
+        year = start_col.selectbox("Year", years, index=years.index(as_of.year), key="summary_year")
+        end_col.empty()
+        period_start = pd.Timestamp(year, 1, 1)
+        period_end = pd.Timestamp(year + 1, 1, 1)
+    elif view == "Quarterly":
+        first = pd.Period(contracts.contract_start.min(), freq="Q")
+        last = pd.Period(contracts.contract_end.max() - pd.Timedelta(days=1), freq="Q")
+        periods = list(pd.period_range(first, last, freq="Q"))
+        default_start = pd.Period(f"{as_of.year}Q1", freq="Q")
+        default_end = pd.Period(as_of, freq="Q")
+        start_q = start_col.selectbox("Start Quarter", periods,
+            index=periods.index(default_start) if default_start in periods else 0,
+            format_func=lambda p: f"Q{p.quarter} {str(p.year)[-2:]}", key="summary_start_quarter")
+        valid_ends = [p for p in periods if p >= start_q]
+        end_q = end_col.selectbox("End Quarter", valid_ends,
+            index=valid_ends.index(default_end) if default_end in valid_ends else len(valid_ends) - 1,
+            format_func=lambda p: f"Q{p.quarter} {str(p.year)[-2:]}", key="summary_end_quarter")
+        period_start, period_end = start_q.start_time.normalize(), (end_q + 1).start_time.normalize()
+    else:
+        first = pd.Period(contracts.contract_start.min(), freq="M")
+        last = pd.Period(contracts.contract_end.max() - pd.Timedelta(days=1), freq="M")
+        periods = list(pd.period_range(first, last, freq="M"))
+        default_start = pd.Period(f"{as_of.year}-01", freq="M")
+        default_end = pd.Period(as_of, freq="M")
+        start_m = start_col.selectbox("Start Month", periods,
+            index=periods.index(default_start) if default_start in periods else 0,
+            format_func=lambda p: p.start_time.strftime("%b %y"), key="summary_start_month")
+        valid_ends = [p for p in periods if p >= start_m]
+        end_m = end_col.selectbox("End Month", valid_ends,
+            index=valid_ends.index(default_end) if default_end in valid_ends else len(valid_ends) - 1,
+            format_func=lambda p: p.start_time.strftime("%b %y"), key="summary_end_month")
+        period_start, period_end = start_m.start_time.normalize(), (end_m + 1).start_time.normalize()
 
 
 
@@ -445,25 +489,7 @@ with dashboard_tab:
 
         ]
 
-        flags, utilization = st.columns(2, gap="medium")
-        with flags:
-            st.markdown("**Contracts Flags**")
-            for col, (label, value), card_key in zip(st.columns(3), kpis, ["kpi_over", "kpi_risk", "kpi_value"]):
-                with col.container(key=card_key):
-                    st.metric(label, value)
-        with utilization:
-            st.markdown("**Utilization Statistics**")
-            credit_col, used_col, utilization_col = st.columns(3)
-            with credit_col.container(key="contracted_box"):
-                st.metric("Total Contracted Credits", f"{entitlement:,.0f}")
-                st.markdown(f'<div class="contract-dollars">${credit_sum(summary.annual_contract_value_usd):,.2f} contract value</div>',
-                            unsafe_allow_html=True)
-            with used_col.container(key="summary_used"):
-                st.metric("Credits Consumed in Period", f"{credit_sum(period_events.credits_used):,.1f}")
-            with utilization_col.container(key="summary_utilization"):
-                st.metric("Contract Utilization %", f"{consumed / entitlement:.1%}" if entitlement else "N/A")
-
-        st.markdown("**Portfolio credit consumption & projection**")
+        st.markdown("**Portfolio Credit Consumption & Projection**")
         chart_data = portfolio_chart(summary, usage, period_start, period_end, snapshot_date)
         chart_data = chart_data.drop(columns=["Contract pacing"])
         chart_long = chart_data.melt("date", var_name="Series", value_name="Credits")
@@ -525,6 +551,24 @@ with dashboard_tab:
                    "using each account's validated trailing 30-day daily rate through its contract end. Dashed lines "
                    "are projections; missing usage history suppresses the consumption forecast.")
 
+        flags, utilization = st.columns(2, gap="medium")
+        with flags:
+            st.markdown("**Contracts Flags**")
+            for col, (label, value), card_key in zip(st.columns(3), kpis, ["kpi_over", "kpi_risk", "kpi_value"]):
+                with col.container(key=card_key):
+                    st.metric(label, value)
+        with utilization:
+            st.markdown("**Utilization Statistics**")
+            credit_col, used_col, utilization_col = st.columns(3)
+            with credit_col.container(key="contracted_box"):
+                st.metric("Total Contracted Credits", f"{entitlement:,.0f}")
+                st.markdown(f'<div class="contract-dollars">${credit_sum(summary.annual_contract_value_usd):,.2f} contract value</div>',
+                            unsafe_allow_html=True)
+            with used_col.container(key="summary_used"):
+                st.metric("Credits Consumed in Period", f"{credit_sum(period_events.credits_used):,.1f}")
+            with utilization_col.container(key="summary_utilization"):
+                st.metric("Contract Utilization %", f"{consumed / entitlement:.1%}" if entitlement else "N/A")
+
     st.subheader("Finance Action Queue")
 
     st.caption("Urgent accounts first. Select a row to open Customer Details.")
@@ -535,7 +579,7 @@ with dashboard_tab:
 
         help="Hides only accounts assigned No Action. Existing priorities and statuses are unchanged.")
 
-    with filter_cols[1].expander("Filter queue"):
+    with filter_cols[1].expander("Filter Queue"):
 
         customers = st.multiselect("Customer", sorted(accounts.customer_id), key="filter_customer")
 
@@ -703,23 +747,23 @@ with dashboard_tab:
 
         st.info("No accounts match. Turn off Exceptions only or clear filters to broaden the queue.")
 
-    with st.expander("Full queue metrics"):
+    with st.expander("Full Queue Metrics"):
 
         st.dataframe(styled, hide_index=True, width="stretch", column_config=config)
 
     
 
-    audit_export = filtered.copy()
-
-    audit_export["source_sha256"] = source_hash
-
-    for key, value in asdict(rules).items():
-
-        audit_export[f"rule_{key}"] = value
-
-    st.download_button("Download queue & calculated metrics (CSV)", audit_export.to_csv(index=False).encode("utf-8-sig"),
-
-                       f"finance_action_queue_{as_of:%Y%m%d}.csv", "text/csv")
+    audit_payload = build_audit_workbook_payload(
+        contracts, usage, filtered, rules, as_of, source_name, source_hash)
+    try:
+        audit_payload_json = json.dumps(audit_payload, sort_keys=True, separators=(",", ":"))
+        audit_xlsx = create_audit_workbook(audit_payload_json)
+        st.download_button("Download Queue & Formula Audit (XLSX)", audit_xlsx,
+                           f"finance_action_queue_{as_of:%Y%m%d}.xlsx",
+                           "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+    except Exception as exc:
+        logging.exception("Excel audit export failed")
+        st.error(f"Excel audit export is unavailable: {exc}")
 
 
 
@@ -727,7 +771,7 @@ with details_tab:
 
     
 
-    st.subheader("Customer detail")
+    st.subheader("Customer Detail")
 
     if st.session_state.get("detail_customer") not in set(accounts.customer_id):
 
@@ -747,7 +791,7 @@ with details_tab:
 
     with st.container(border=True):
 
-        st.markdown("**Why this account is flagged**" if m["status"] != "ON TRACK" or m["usage_accelerating"] else "**Monitoring assessment**")
+        st.markdown("**Why This Account Is Flagged**" if m["status"] != "ON TRACK" or m["usage_accelerating"] else "**Monitoring Assessment**")
 
         st.write(m["status_reason"])
 
@@ -785,7 +829,7 @@ with details_tab:
 
         col.metric(label, "N/A" if key == "projected_utilization_pct" and m["contract_lifecycle"] == "NOT STARTED" else fmt(m[key], kind))
 
-    with st.expander("Contract, balance & exhaustion details"):
+    with st.expander("Contract, Balance & Exhaustion Details"):
 
         fields = [
 
@@ -817,7 +861,7 @@ with details_tab:
 
     with left:
 
-        st.markdown("**Cumulative usage vs. contract pacing**")
+        st.markdown("**Cumulative Usage vs. Contract Pacing**")
 
         chart_data = pacing_chart_data(m, usage).melt("date", var_name="Series", value_name="Credits")
 
@@ -839,7 +883,7 @@ with details_tab:
 
     with right:
 
-        st.markdown("**Daily usage trend**")
+        st.markdown("**Daily Usage Trend**")
 
         end_date = min(as_of, m["contract_end"] - pd.Timedelta(days=1))
 
@@ -863,7 +907,7 @@ with details_tab:
 
     
 
-    with st.expander("Recent usage & commercial impact", expanded=False):
+    with st.expander("Recent Usage & Commercial Impact", expanded=False):
 
         detail_fields = {
 
@@ -887,7 +931,7 @@ with details_tab:
 
     
 
-    with st.expander("Data & calculation audit"):
+    with st.expander("Data & Calculation Audit"):
 
         st.caption(f"Source SHA-256: {source_hash}")
 
@@ -917,15 +961,15 @@ with details_tab:
 
             st.dataframe(issues, hide_index=True, width="stretch")
 
-        st.markdown("**Selected account: full calculated record**")
+        st.markdown("**Selected Account: Full Calculated Record**")
 
         st.dataframe(pd.DataFrame([{"Field": k, "Value": str(v)} for k, v in m.items()]), hide_index=True, width="stretch")
 
-        st.markdown("**Source contract**")
+        st.markdown("**Source Contract**")
 
         st.dataframe(contracts.loc[contracts.customer_id.eq(selected)], hide_index=True, width="stretch")
 
-        st.markdown("**Source daily usage**")
+        st.markdown("**Source Daily Usage**")
 
         st.dataframe(usage.loc[usage.customer_id.eq(selected)], hide_index=True, width="stretch")
 
@@ -934,47 +978,25 @@ with details_tab:
 
 
 with dashboard_tab:
-
-    with st.expander("Account interpretation & suggested action", expanded=True):
-
-        st.markdown("**" + selected + "**")
-
-        fallback = deterministic_brief(m)
-
-        brief_key = sha256((json.dumps(account_facts(m), sort_keys=True) + source_hash + json.dumps(asdict(rules), sort_keys=True)).encode()).hexdigest()
-
-        if os.environ.get("OPENAI_API_KEY", "").strip():
-
-            st.caption("Optional: send this customer's validated metrics to OpenAI for a four-bullet draft. All financial figures remain controlled by Python.")
-
-            if st.button("Generate Finance Brief"):
-
-                try:
-
-                    with st.spinner("Drafting from validated facts…"):
-
-                        st.session_state["ai_brief"] = (brief_key, generate_ai_brief(m))
-
-                except Exception:
-
-                    st.session_state.pop("ai_brief", None)
-
-                    st.warning("AI brief was unavailable or failed validation. Showing the deterministic brief.")
-
-            cached = st.session_state.get("ai_brief")
-
-            bullets = cached[1] if cached and cached[0] == brief_key else fallback
-
-            st.caption("AI explanation — review interpretation before sharing. Summary, financial impact, owner and action are deterministic." if bullets is not fallback else "Deterministic brief")
-
-        else:
-
-            st.caption("Deterministic brief · no API key required")
-
-            bullets = fallback
-
-        for bullet in bullets:
-
-            # Dollar signs must remain currency, not paired Markdown math delimiters.
-
-            st.markdown("• " + bullet.replace("$", "\\$"))
+    st.markdown("### Monthly Report")
+    st.caption(
+        f"Create an editable PowerPoint for {as_of:%B %Y} with the portfolio outlook, "
+        "top customers, open or resolved priority items, and the annual usage chart.")
+    report_payload = build_monthly_report_payload(
+        accounts, usage, as_of, source_name, source_hash,
+        st.session_state.get("priority_resolutions", {}))
+    report_payload_json = json.dumps(
+        report_payload, sort_keys=True, separators=(",", ":"))
+    try:
+        report_bytes = create_monthly_report(report_payload_json)
+        st.download_button(
+            "Generate Monthly Usage Report",
+            report_bytes,
+            f"monthly_usage_report_{as_of:%Y_%m}.pptx",
+            "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+            type="primary",
+            key="generate_monthly_report",
+        )
+    except Exception as exc:
+        logging.getLogger(__name__).exception("PowerPoint report generation failed")
+        st.error(str(exc))

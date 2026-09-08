@@ -38,18 +38,16 @@ the path until cleared. No workbook is written or copied by the application.
 
 ## Workflow
 
-The Usage & Billing Dashboard starts with two **Priority** cards, followed
-by portfolio KPIs, a colored action queue, and account interpretation. Soft lavender
+The Usage & Billing Dashboard starts with compact **Priority Alerts**, followed
+by a ranged usage summary, portfolio KPIs, and a colored action queue. Soft lavender
 shades distinguish urgent and high-priority accounts from quieter neutral rows;
 text labels always accompany color. **Review account** or queue row selection opens
 the **Customer Details** tab automatically. That tab contains charts, supporting
 metrics, contract data and collapsed audit sections. The snapshot date stays visible;
-source filename/read-time/freshness details are in the sidebar's Source information.
-Without an API key, interpretation is explicitly labeled deterministic; with a key,
-the existing optional AI explanation can be generated for the selected account.
+source filename/read-time/freshness details are in the sidebar's Source Information.
 
-1. Check the source filename and analysis as-of date. Exception KPIs appear first;
-   expand Portfolio totals for contracted credits, consumed credits, and utilization.
+1. Check the source filename and analysis as-of date. Choose Annual, or use the
+   Start/End controls to review a quarterly or monthly range across calendar years.
 2. Work down the compact Finance Action Queue in priority order. Exceptions only is
    on by default and hides accounts assigned No Action without changing classifications.
 3. Expand Filter queue to filter by customer, status, or priority. Portfolio KPIs remain
@@ -59,10 +57,11 @@ the existing optional AI explanation can be generated for the selected account.
    The reason, owner, and recommended action appear before supporting metrics and charts.
 5. Open the collapsed sidebar to change the source or Monitoring Assumptions.
    Existing calculations and rules rerun immediately.
-6. Download the queue with its full calculated metrics, thresholds, as-of date, and
-   source SHA-256. Percentage fields in the CSV are fractions (0.70 means 70%).
-7. Expand Full queue metrics, Contract, balance & exhaustion details, or Finance Brief
-   as needed. Use Data & calculation audit to inspect original Excel row references.
+6. Download **Queue & Formula Audit (XLSX)**. The workbook contains the filtered
+   Action Queue, full Account Metrics, Assumptions, normalized Contracts, and Usage
+   Events. Derived cells remain Excel formulas and link back to the source sheets.
+7. Expand Full Queue Metrics or Contract, Balance & Exhaustion Details as needed.
+   Use Data & Calculation Audit to inspect original Excel row references.
 
 Current overage is for Billing reconciliation. Projected overage supports additional
 credit discussions. Projected unused value supports adoption and renewal discussions.
@@ -96,10 +95,14 @@ July 31, 2026. The source labels the data illustrative.
 - `finance.py`: schema discovery, normalization, validation, transparent Rules
   configuration, account calculations, classification, and chart series.
 - `app.py`: Streamlit inputs, presentation, filters, charts, and audit downloads.
-- `briefs.py`: deterministic brief and optional isolated AI interpretation. This
-  module receives an account record and returns text; it cannot modify the model.
+- `portfolio.py`: auditable portfolio chart series for actuals and projections.
+- `reports.py`: deterministic report payload construction and the presentation bridge.
+- `report_builder.mjs`: editable, Glean-formatted PowerPoint authoring from validated metrics.
+- `excel_export.py`: formula-audit payload construction and spreadsheet runtime bridge.
+- `excel_export_builder.mjs`: traceable XLSX authoring with linked source and formula sheets.
 - `test_finance.py`: source regressions, finance boundaries, and mocked AI safeguards.
 - `test_app.py`: Streamlit AppTest for runtime, filters, assumptions, and fallback behavior.
+- `test_reports.py`: source-backed report payload and monthly chart checks.
 - `.streamlit/config.toml`: white theme, localhost binding, telemetry disabled.
 
 Only two normalized source tables and one derived account table are needed. Customer
@@ -146,8 +149,8 @@ first actual event day whose cumulative usage reached entitlement. A forward
 exhaustion date can lie beyond contract end; it is a hypothetical continuation of
 the recent rate. Inactive or zero-rate unexhausted accounts have no exhaustion date.
 Expired contracts with complete records have zero remaining forecast. Future contracts
-use NOT STARTED and have unavailable forecast-dependent values in the UI, CSV, and
-briefs. Incomplete feeds also withhold forecasts, rates, growth, and pacing; observed
+use NOT STARTED and have unavailable forecast-dependent values in the UI and XLSX.
+Incomplete feeds also withhold forecasts, rates, growth, and pacing; observed
 usage and overage remain visible as lower bounds.
 
 Chart points use day boundaries: zero at contract start, actual daily consumption
@@ -206,30 +209,13 @@ does not trigger the date rule. No rounding is applied before comparisons.
   value is not a refund liability, revenue adjustment, or confirmed renewal loss.
 - No automatic polling or scheduling is included. The workflow refreshes on rerun.
 
-## Optional AI brief
-
-Without `OPENAI_API_KEY`, the complete four-bullet deterministic brief is always available.
-If a key exists, **Generate Finance Brief** appears. Clicking sends only allowlisted,
-calculated, formatted account facts to OpenAI. Raw usage rows, workbook prose, file
-contents, paths, and API credentials are never included in the prompt. The request
-uses the Responses API with `store=False`, a 30-second timeout, and no automatic retries.
-
-Set `OPENAI_API_KEY` in the launching shell or its environment. Optionally set
-`OPENAI_MODEL`; the default is `gpt-5.4-mini`. Use a model available to your API project.
-Do not commit keys. No key is needed for installation, normal use, or tests.
-
-The prompt prohibits calculation, changing figures, or inventing contract terms.
-The model returns four JSON strings using fact placeholders. Python inserts all
-figures from validated facts after rejecting literal digits, common numeric words,
-unknown placeholders, and invalid structures. Failed requests or validation fall
-back to the deterministic brief. Account/source/rule changes invalidate displayed
-AI drafts. Only the explanatory bullet is model-authored; the summary, financial
-impact, owner and action are replaced with deterministic text. Structural checks
-cannot guarantee the explanation's qualitative interpretation; review it before
-sharing. AI never writes back to financial values.
-
-The API contract follows the [official OpenAI quickstart](https://developers.openai.com/api/docs/quickstart).
 UI verification uses [Streamlit AppTest](https://docs.streamlit.io/develop/api-reference/app-testing/st.testing.v1.apptest).
+
+## Monthly PowerPoint report
+
+At the bottom of the Dashboard tab, **Generate Monthly Usage Report** creates a three-slide report for the workbook's latest usage month. The deck includes a cover, a deterministic executive summary, and an editable annual usage chart with portfolio statistics. The issue summary also reflects the open or resolved state of priority alerts in the current browser session.
+
+PowerPoint export uses the local presentation runtime bundled with Codex desktop. When launching elsewhere, set `PPTX_NODE` to a Node.js executable and `ARTIFACT_TOOL_MODULE` to the installed `@oai/artifact-tool/dist/artifact_tool.mjs` file before starting Streamlit.
 
 ## Validation against the supplied Excel source
 
