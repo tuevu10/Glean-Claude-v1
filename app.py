@@ -635,7 +635,15 @@ with dashboard_tab:
         statuses = st.multiselect("Status", STATUSES, key="filter_status", help=status_help,
                                   format_func=lambda status: status.title())
 
-        priorities = st.multiselect("Priority", sorted(accounts.priority.unique()), key="filter_priority")
+        priority_help = (
+            "**P1 - Urgent:** over entitlement; Billing should reconcile current exposure.  \n"
+            "**P2 - High:** early exhaustion risk or incomplete usage data requiring review.  \n"
+            "**P3 - Medium:** underutilizing, usage-accelerating On Track, or expired On Track accounts requiring follow-up.  \n"
+            "**P4 - Routine:** On Track or Not Started accounts with no immediate action."
+        )
+        priorities = st.multiselect("Priority", sorted(accounts.priority.unique()),
+                                    key="filter_priority", help=priority_help,
+                                    format_func=lambda priority: priority.replace(" · ", " - "))
 
         st.caption("Customer detail can also open any account, including accounts outside these filters.")
 
@@ -776,7 +784,8 @@ with dashboard_tab:
 
     def color_queue(row):
 
-        wash, ink = priority_palette.get(row["Priority"], ("#fff", "#20313b"))
+        priority_code = str(row["Priority"]).split()[0]
+        wash, ink = priority_palette.get(priority_code, ("#fff", "#20313b"))
 
         return [f"background-color:{wash};color:{ink};" + ("font-weight:650;" if col in ["Priority", "Status", "Why review"] else "") for col in row.index]
 
