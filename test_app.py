@@ -80,6 +80,7 @@ class AppTests(unittest.TestCase):
                                   if "Data import check passed" in markdown.value)
             self.assertIn("Jan 05, 2026", import_summary)
             self.assertIn("Jul 31, 2026", import_summary)
+            self.assertIn("Data Audit", [expander.label for expander in app.expander])
             self.assertEqual(len(app.dataframe[0].value), 8)
             self.assertEqual(app.dataframe[0].value.columns[:2].tolist(), ["Priority", "Status"])
             self.assertEqual(app.dataframe[0].value.iloc[0]["Priority"], "P1 - Urgent")

@@ -46,8 +46,8 @@ the **Customer Details** tab automatically. That tab contains charts, supporting
 metrics, contract data and collapsed audit sections. The snapshot date stays visible;
 source filename/read-time/freshness details are in the sidebar's Source Information.
 
-1. Check the source filename, analysis as-of date, and the main-tab Data Import Check.
-   It compares source and imported rows, date ranges, credits, and entitlements.
+1. Check the source filename, analysis as-of date, and the sidebar's collapsed Data
+   Audit summary. It compares source and imported rows, date ranges, credits, and entitlements.
    Choose Annual, or use the Start/End controls to review a quarterly or monthly range.
 2. Work down the compact Finance Action Queue in priority order. Exceptions only is
    on by default and hides accounts assigned No Action without changing classifications.

@@ -366,6 +366,21 @@ with st.sidebar.expander("Source Information"):
         st.warning("Future-dated usage: verify the source dates.")
 
 
+with st.sidebar.expander("Data Audit", expanded=False):
+
+    if import_audit["passed"]:
+        st.markdown(
+            '<div class="data-import-check">✓ <b>Data import check passed</b> · Usage dates '
+            f'{import_audit["usage_min"]:%b %d, %Y}–{import_audit["usage_max"]:%b %d, %Y} · '
+            f'{import_audit["usage_rows"]:,} usage rows and {import_audit["contract_rows"]:,} contracts match the source · '
+            'Customer credits used and entitlements reconcile</div>', unsafe_allow_html=True)
+    else:
+        st.error(
+            f'Data import mismatch found · Usage dates {import_audit["usage_min"]:%b %d, %Y}–'
+            f'{import_audit["usage_max"]:%b %d, %Y} · {import_audit["failed_checks"]} reconciliation '
+            'check(s) failed. Review Data & Calculation Audit.')
+
+
 
 issues = accounts.loc[accounts.data_notes.ne(""), ["customer_id", "data_notes"]]
 
@@ -388,18 +403,6 @@ def open_account(customer_id):
 dashboard_tab, details_tab = st.tabs(["Dashboard", "Customer Details"], key="workspace_view", on_change="rerun")
 
 with dashboard_tab:
-
-    if import_audit["passed"]:
-        st.markdown(
-            '<div class="data-import-check">✓ <b>Data import check passed</b> · Usage dates '
-            f'{import_audit["usage_min"]:%b %d, %Y}–{import_audit["usage_max"]:%b %d, %Y} · '
-            f'{import_audit["usage_rows"]:,} usage rows and {import_audit["contract_rows"]:,} contracts match the source · '
-            'Customer credits used and entitlements reconcile</div>', unsafe_allow_html=True)
-    else:
-        st.error(
-            f'Data import mismatch found · Usage dates {import_audit["usage_min"]:%b %d, %Y}–'
-            f'{import_audit["usage_max"]:%b %d, %Y} · {import_audit["failed_checks"]} reconciliation '
-            'check(s) failed. Review Data & Calculation Audit.')
 
     st.markdown("#### Priority Alerts")
 
