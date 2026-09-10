@@ -4,6 +4,7 @@ Dates are day boundaries: [contract_start, contract_end). As-of usage includes
 the full day; cutoff is midnight immediately after as_of. Ratios are fractions.
 """
 from dataclasses import dataclass, asdict
+from collections import Counter
 from decimal import Decimal
 from io import BytesIO
 import math
@@ -128,6 +129,119 @@ def load_workbook(data: bytes):
         contracts = _table(book, "Contracts", CONTRACT_FIELDS)
         usage = _table(book, "Usage Events", USAGE_FIELDS)
     return normalize(contracts, usage)
+
+
+def _canonical_customer_id(value):
+    return str(int(value)) if isinstance(value, (float, np.floating)) and value.is_integer() else str(value).strip()
+
+
+def _canonical_rows(frame, fields, date_fields=(), numeric_fields=()):
+    """Represent source and loaded records with comparable normalized scalar values."""
+    rows = []
+    for record in frame.to_dict("records"):
+        values = []
+        for field in fields:
+            value = record[field]
+            if field == "customer_id":
+                value = _canonical_customer_id(value)
+            elif field in date_fields:
+                value = pd.Timestamp(value).normalize().date().isoformat()
+            elif field in numeric_fields:
+                value = Decimal(str(value))
+            values.append(value)
+        rows.append(tuple(values))
+    return Counter(rows)
+
+
+def _decimal_by_customer(frame, value_field):
+    totals = {}
+    for customer_id, values in frame.groupby("customer_id")[value_field]:
+        totals[_canonical_customer_id(customer_id)] = sum(
+            (Decimal(str(value)) for value in values), Decimal(0))
+    return totals
+
+
+def reconcile_source_import(data: bytes, contracts, usage, accounts):
+    """Verify normalized rows and account rollups against the source workbook."""
+    with pd.ExcelFile(BytesIO(data)) as book:
+        source_contracts = _table(book, "Contracts", CONTRACT_FIELDS)
+        source_usage = _table(book, "Usage Events", USAGE_FIELDS)
+
+    contract_fields = CONTRACT_FIELDS + ["source_excel_row"]
+    usage_fields = USAGE_FIELDS + ["source_excel_row"]
+    source_contract_rows = _canonical_rows(
+        source_contracts, contract_fields, ["contract_start"], CONTRACT_FIELDS[2:])
+    loaded_contract_rows = _canonical_rows(
+        contracts, contract_fields, ["contract_start"], CONTRACT_FIELDS[2:])
+    source_usage_rows = _canonical_rows(
+        source_usage, usage_fields, ["date"], ["credits_used"])
+    loaded_usage_rows = _canonical_rows(
+        usage, usage_fields, ["date"], ["credits_used"])
+
+    source_usage_dates = pd.to_datetime(source_usage.date).dt.normalize()
+    source_contract_dates = pd.to_datetime(source_contracts.contract_start).dt.normalize()
+    loaded_usage_dates = pd.to_datetime(usage.date).dt.normalize()
+    loaded_contract_dates = pd.to_datetime(contracts.contract_start).dt.normalize()
+
+    source_used = _decimal_by_customer(source_usage.assign(
+        customer_id=source_usage.customer_id.map(_canonical_customer_id)), "credits_used")
+    account_used = {
+        _canonical_customer_id(row.customer_id): Decimal(str(row.total_credits_used))
+        for row in accounts.itertuples()
+    }
+    source_entitlement = {
+        _canonical_customer_id(row.customer_id): Decimal(str(row.annual_entitlement_credits))
+        for row in source_contracts.itertuples()
+    }
+    account_entitlement = {
+        _canonical_customer_id(row.customer_id): Decimal(str(row.annual_entitlement_credits))
+        for row in accounts.itertuples()
+    }
+    usage_customer_mismatches = sorted(
+        customer_id for customer_id in set(source_used) | set(account_used)
+        if source_used.get(customer_id) != account_used.get(customer_id))
+    entitlement_customer_mismatches = sorted(
+        customer_id for customer_id in set(source_entitlement) | set(account_entitlement)
+        if source_entitlement.get(customer_id) != account_entitlement.get(customer_id))
+
+    checks = [
+        {"Check": "Contract row count", "Source": f"{len(source_contracts):,}",
+         "Imported / Calculated": f"{len(contracts):,}", "Passed": len(source_contracts) == len(contracts)},
+        {"Check": "Usage row count", "Source": f"{len(source_usage):,}",
+         "Imported / Calculated": f"{len(usage):,}", "Passed": len(source_usage) == len(usage)},
+        {"Check": "Contract start date range",
+         "Source": f"{source_contract_dates.min():%b %d, %Y} – {source_contract_dates.max():%b %d, %Y}",
+         "Imported / Calculated": f"{loaded_contract_dates.min():%b %d, %Y} – {loaded_contract_dates.max():%b %d, %Y}",
+         "Passed": source_contract_dates.min() == loaded_contract_dates.min() and source_contract_dates.max() == loaded_contract_dates.max()},
+        {"Check": "Usage event date range",
+         "Source": f"{source_usage_dates.min():%b %d, %Y} – {source_usage_dates.max():%b %d, %Y}",
+         "Imported / Calculated": f"{loaded_usage_dates.min():%b %d, %Y} – {loaded_usage_dates.max():%b %d, %Y}",
+         "Passed": source_usage_dates.min() == loaded_usage_dates.min() and source_usage_dates.max() == loaded_usage_dates.max()},
+        {"Check": "Contract field values", "Source": "Workbook contract rows",
+         "Imported / Calculated": "All normalized rows match" if source_contract_rows == loaded_contract_rows else "Mismatch found",
+         "Passed": source_contract_rows == loaded_contract_rows},
+        {"Check": "Usage field values", "Source": "Workbook usage rows",
+         "Imported / Calculated": "All normalized rows match" if source_usage_rows == loaded_usage_rows else "Mismatch found",
+         "Passed": source_usage_rows == loaded_usage_rows},
+        {"Check": "Credits used by customer", "Source": f"{len(source_used):,} customer totals",
+         "Imported / Calculated": "All totals reconcile" if not usage_customer_mismatches else ", ".join(usage_customer_mismatches),
+         "Passed": not usage_customer_mismatches},
+        {"Check": "Entitlement by customer", "Source": f"{len(source_entitlement):,} customer totals",
+         "Imported / Calculated": "All totals reconcile" if not entitlement_customer_mismatches else ", ".join(entitlement_customer_mismatches),
+         "Passed": not entitlement_customer_mismatches},
+    ]
+    failed = [check for check in checks if not check["Passed"]]
+    return {
+        "passed": not failed,
+        "failed_checks": len(failed),
+        "usage_min": source_usage_dates.min(),
+        "usage_max": source_usage_dates.max(),
+        "contract_min": source_contract_dates.min(),
+        "contract_max": source_contract_dates.max(),
+        "usage_rows": len(source_usage),
+        "contract_rows": len(source_contracts),
+        "checks": checks,
+    }
 
 
 def classify(m, rules):

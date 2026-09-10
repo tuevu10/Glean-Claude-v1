@@ -28,7 +28,8 @@ import streamlit as st
 
 
 
-from finance import Rules, STATUSES, load_workbook, calculate_accounts, pacing_chart_data, credit_sum
+from finance import (Rules, STATUSES, load_workbook, calculate_accounts, pacing_chart_data,
+                     credit_sum, reconcile_source_import)
 
 from portfolio import portfolio_chart
 from reports import build_monthly_report_payload, generate_monthly_report
@@ -171,6 +172,7 @@ h1 {letter-spacing:-0.035em;} h2 {letter-spacing:-0.02em;}
 .customer-kpi-label {min-height:30px;color:#24343D;font-size:12px;line-height:1.25;}
 .customer-kpi-value {color:#24343D;font-size:1.35rem;line-height:1.3;white-space:nowrap;}
 .customer-kpi-value .over-entitlement-value {color:#A33A45;font-weight:650;}
+.data-import-check {padding:8px 11px;border:1px solid #CFE2D4;border-radius:7px;background:#F3F8F4;color:#315D3D;font-size:13px;line-height:1.4;}
 </style>""", unsafe_allow_html=True)
 
 
@@ -192,6 +194,11 @@ def create_monthly_report(report_payload_json):
 @st.cache_data(show_spinner=False, max_entries=6)
 def create_audit_workbook(audit_payload_json):
     return generate_audit_workbook(json.loads(audit_payload_json))
+
+
+@st.cache_data(show_spinner=False, max_entries=6)
+def create_import_reconciliation(source_data, imported_contracts, imported_usage, calculated_accounts):
+    return reconcile_source_import(source_data, imported_contracts, imported_usage, calculated_accounts)
 
 
 def assumption_label(label, definition):
@@ -301,6 +308,8 @@ try:
 
     accounts = calculate_accounts(contracts, usage, rules)
 
+    import_audit = create_import_reconciliation(raw, contracts, usage, accounts)
+
     if "forecast_available" not in accounts.columns:
 
         raise RuntimeError("Application modules are out of sync. Stop Streamlit and restart it to load the current finance engine.")
@@ -379,6 +388,18 @@ def open_account(customer_id):
 dashboard_tab, details_tab = st.tabs(["Dashboard", "Customer Details"], key="workspace_view", on_change="rerun")
 
 with dashboard_tab:
+
+    if import_audit["passed"]:
+        st.markdown(
+            '<div class="data-import-check">✓ <b>Data import check passed</b> · Usage dates '
+            f'{import_audit["usage_min"]:%b %d, %Y}–{import_audit["usage_max"]:%b %d, %Y} · '
+            f'{import_audit["usage_rows"]:,} usage rows and {import_audit["contract_rows"]:,} contracts match the source · '
+            'Customer credits used and entitlements reconcile</div>', unsafe_allow_html=True)
+    else:
+        st.error(
+            f'Data import mismatch found · Usage dates {import_audit["usage_min"]:%b %d, %Y}–'
+            f'{import_audit["usage_max"]:%b %d, %Y} · {import_audit["failed_checks"]} reconciliation '
+            'check(s) failed. Review Data & Calculation Audit.')
 
     st.markdown("#### Priority Alerts")
 
@@ -1061,6 +1082,14 @@ with details_tab:
     with st.expander("Data & Calculation Audit"):
 
         st.caption(f"Source SHA-256: {source_hash}")
+
+        audit_table = pd.DataFrame(import_audit["checks"])
+        audit_table["Result"] = audit_table.pop("Passed").map({True: "Passed", False: "Mismatch"})
+        st.dataframe(audit_table, hide_index=True, width="stretch",
+            column_config={"Check": st.column_config.TextColumn(width="medium"),
+                           "Source": st.column_config.TextColumn(width="medium"),
+                           "Imported / Calculated": st.column_config.TextColumn(width="large"),
+                           "Result": st.column_config.TextColumn(width="small")})
 
         st.write("Contract and usage source row numbers refer to the original Excel worksheet. All calculations use unrounded values; only display values are rounded.")
 

@@ -76,6 +76,10 @@ class AppTests(unittest.TestCase):
             self.assertFalse(app.exception)
             self.assertEqual(app.metric[0].value, "1")
             self.assertEqual(app.metric[3].value, "1,752,000")
+            import_summary = next(markdown.value for markdown in app.markdown
+                                  if "Data import check passed" in markdown.value)
+            self.assertIn("Jan 05, 2026", import_summary)
+            self.assertIn("Jul 31, 2026", import_summary)
             self.assertEqual(len(app.dataframe[0].value), 8)
             self.assertEqual(app.dataframe[0].value.columns[:2].tolist(), ["Priority", "Status"])
             self.assertEqual(app.dataframe[0].value.iloc[0]["Priority"], "P1 - Urgent")

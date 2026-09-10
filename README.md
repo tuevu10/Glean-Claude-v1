@@ -46,8 +46,9 @@ the **Customer Details** tab automatically. That tab contains charts, supporting
 metrics, contract data and collapsed audit sections. The snapshot date stays visible;
 source filename/read-time/freshness details are in the sidebar's Source Information.
 
-1. Check the source filename and analysis as-of date. Choose Annual, or use the
-   Start/End controls to review a quarterly or monthly range across calendar years.
+1. Check the source filename, analysis as-of date, and the main-tab Data Import Check.
+   It compares source and imported rows, date ranges, credits, and entitlements.
+   Choose Annual, or use the Start/End controls to review a quarterly or monthly range.
 2. Work down the compact Finance Action Queue in priority order. Exceptions only is
    on by default and hides accounts assigned No Action without changing classifications.
 3. Expand Filter queue to filter by customer, status, or priority. Portfolio KPIs remain
@@ -92,8 +93,9 @@ July 31, 2026. The source labels the data illustrative.
 
 ## Architecture
 
-- `finance.py`: schema discovery, normalization, validation, transparent Rules
-  configuration, account calculations, classification, and chart series.
+- `finance.py`: schema discovery, normalization, source-to-model reconciliation,
+  validation, transparent Rules configuration, account calculations, classification,
+  and chart series.
 - `app.py`: Streamlit inputs, presentation, filters, charts, and audit downloads.
 - `portfolio.py`: auditable portfolio chart series for actuals and projections.
 - `reports.py`: deterministic report payload construction and the presentation bridge.

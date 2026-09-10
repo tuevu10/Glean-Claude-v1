@@ -8,7 +8,8 @@ from unittest.mock import patch
 
 import pandas as pd
 
-from finance import Rules, normalize, load_workbook, calculate_accounts, pacing_chart_data, classify
+from finance import (Rules, normalize, load_workbook, calculate_accounts, pacing_chart_data,
+                     classify, reconcile_source_import)
 from briefs import account_facts, deterministic_brief, validate_brief, generate_ai_brief
 
 SOURCE = Path.home() / "Downloads" / "Product Finance - AI Fluency Test Sample Data.xlsx"
@@ -184,6 +185,19 @@ class FinanceTests(unittest.TestCase):
         self.assertAlmostEqual(a.estimated_overage_value.sum(), 30000.35)
         lower = calculate_accounts(c, u, replace(Rules(), usage_acceleration_threshold=.20)).set_index("customer_id")
         self.assertTrue(lower.loc["CUST-05", "usage_accelerating"])
+
+        audit = reconcile_source_import(SOURCE.read_bytes(), c, u, a.reset_index())
+        self.assertTrue(audit["passed"])
+        self.assertEqual(audit["usage_min"], pd.Timestamp("2026-01-05"))
+        self.assertEqual(audit["usage_max"], pd.Timestamp("2026-07-31"))
+        self.assertEqual(audit["failed_checks"], 0)
+        changed = a.reset_index().copy()
+        changed.loc[changed.customer_id.eq("CUST-01"), "total_credits_used"] += 1
+        failed = reconcile_source_import(SOURCE.read_bytes(), c, u, changed)
+        self.assertFalse(failed["passed"])
+        self.assertIn("CUST-01", next(
+            check["Imported / Calculated"] for check in failed["checks"]
+            if check["Check"] == "Credits used by customer"))
 
     def test_ai_fact_substitution_and_invalid_output(self):
         c, u = synthetic(dates=["2026-01-01"], credits=[100])
