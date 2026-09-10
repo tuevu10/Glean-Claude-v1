@@ -605,7 +605,18 @@ with dashboard_tab:
 
         customers = st.multiselect("Customer", sorted(accounts.customer_id), key="filter_customer")
 
-        statuses = st.multiselect("Status", STATUSES, key="filter_status")
+        status_help = (
+            f"**Over Entitlement:** credits used are at least 100% of entitlement.  \n"
+            f"**Early Exhaustion Risk:** active, not already over entitlement, and projected utilization is above "
+            f"{projected:.0f}% or estimated exhaustion is more than {early} days before contract end.  \n"
+            f"**Underutilizing:** at least 25% of the contract has elapsed and projected utilization is below {under:.0f}%.  \n"
+            "**On Track:** no exception rule applies.  \n"
+            "**Data Review:** expected daily usage records are missing, so pacing and forecasts are withheld; "
+            "an account already over entitlement remains Over Entitlement.  \n"
+            "**Not Started:** the analysis date is before the contract begins, so forecast metrics are unavailable."
+        )
+        statuses = st.multiselect("Status", STATUSES, key="filter_status", help=status_help,
+                                  format_func=lambda status: status.title())
 
         priorities = st.multiselect("Priority", sorted(accounts.priority.unique()), key="filter_priority")
 
