@@ -77,6 +77,9 @@ class AppTests(unittest.TestCase):
             self.assertEqual(app.metric[0].value, "1")
             self.assertEqual(app.metric[3].value, "1,752,000")
             self.assertEqual(len(app.dataframe[0].value), 8)
+            self.assertEqual(app.dataframe[0].value.columns[:2].tolist(), ["Priority", "Status"])
+            self.assertEqual(app.dataframe[0].value.iloc[0]["Priority"], "P1 - Urgent")
+            self.assertEqual(app.dataframe[0].value.iloc[0]["Status"], "Over Entitlement")
             review_text = app.dataframe[0].value.set_index("Customer")["Why review"]
             self.assertIn("currently consumed", review_text.loc["CUST-02"])
             self.assertIn("projected", review_text.loc["CUST-02"])

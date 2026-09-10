@@ -725,7 +725,9 @@ with dashboard_tab:
 
     compact = pd.DataFrame({
 
-        "Priority": filtered.priority.str.split(" · ").str[0],
+        "Priority": filtered.priority.str.replace(" · ", " - ", regex=False),
+
+        "Status": filtered.status.str.title(),
 
         "Customer": filtered.customer_id,
 
@@ -763,7 +765,7 @@ with dashboard_tab:
 
         wash, ink = priority_palette.get(row["Priority"], ("#fff", "#20313b"))
 
-        return [f"background-color:{wash};color:{ink};" + ("font-weight:650;" if col in ["Priority", "Why review"] else "") for col in row.index]
+        return [f"background-color:{wash};color:{ink};" + ("font-weight:650;" if col in ["Priority", "Status", "Why review"] else "") for col in row.index]
 
     compact_style = compact.style.apply(color_queue, axis=1)
 
@@ -771,7 +773,9 @@ with dashboard_tab:
 
         column_config={
 
-            "Priority": st.column_config.TextColumn(width=65),
+            "Priority": st.column_config.TextColumn(width=125),
+
+            "Status": st.column_config.TextColumn(width=175),
 
             "Customer": st.column_config.TextColumn(width=100),
 
