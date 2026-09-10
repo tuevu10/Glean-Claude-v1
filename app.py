@@ -568,10 +568,14 @@ with dashboard_tab:
                     '<span class="usage-label">&#8226; Cumulative Consumption</span></div>',
                     unsafe_allow_html=True)
         average_addition = chart_data.attrs.get("average_monthly_contracted_addition")
-        st.caption(f"Projection methodology: contracted credits extend at the completed-month average of "
-                   f"{fmt(average_addition)} credits per month; cumulative consumption extends from the snapshot "
-                   "using each account's validated trailing 30-day daily rate through its contract end. Dashed lines "
-                   "are projections; missing usage history suppresses the consumption forecast.")
+        st.caption(
+            "**How projections are calculated**  \n"
+            f"1. **Total contracted credits:** credits contracted at the snapshot + the average credits added per "
+            f"completed month ({fmt(average_addition)} per month) × remaining months.  \n"
+            "2. **Cumulative consumption:** credits used at the snapshot + each customer's trailing 30-day average "
+            "daily usage × its remaining active contract days.  \n"
+            "Dashed lines show projections. Consumption is not projected when daily usage records are incomplete."
+        )
 
         flags, utilization = st.columns(2, gap="medium")
         with flags:
