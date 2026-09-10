@@ -860,14 +860,15 @@ with details_tab:
     elapsed_contract_months = m["contract_elapsed_pct"] * m["term_months"]
     key_metrics = [
 
-        ("Total Credit Entitlement", f'{m["annual_entitlement_credits"]:,.0f}',
-         "Contracted annual credit entitlement."),
+        ("Credits Used / Total Credit Entitlement",
+         f'{m["total_credits_used"]:,.1f} / {m["annual_entitlement_credits"]:,.0f}',
+         "Cumulative credits consumed through the analysis date compared with contracted annual credit entitlement."),
+
+        ("Remaining Credit Available", f'{m["remaining_credits"]:,.1f}',
+         "Total credit entitlement minus credits used. A negative value indicates consumption above entitlement."),
 
         ("Contract Months Elapsed", f'{elapsed_contract_months:.1f} / {int(m["term_months"])}',
          "Elapsed contract days expressed as the equivalent share of the contractual month term."),
-
-        ("Credits Used", fmt(m["total_credits_used"]),
-         "Cumulative credits consumed through the analysis date."),
 
         ("Utilization", fmt(m["utilization_pct"], "pct"),
          "Credits used divided by total credit entitlement."),
