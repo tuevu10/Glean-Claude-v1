@@ -653,7 +653,9 @@ with dashboard_tab:
             "**On Track:** no exception rule applies.  \n"
             "**Not Started:** the analysis date is before the contract begins, so forecast metrics are unavailable."
         )
-        statuses = st.multiselect("Status", STATUSES, key="filter_status", help=status_help,
+        status_options = ["OVER ENTITLEMENT", "EARLY EXHAUSTION RISK", "UNDERUTILIZING",
+                          "ON TRACK", "NOT STARTED"]
+        statuses = st.multiselect("Status", status_options, key="filter_status", help=status_help,
                                   format_func=lambda status: status.title())
 
         priority_help = (
