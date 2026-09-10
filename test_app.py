@@ -77,6 +77,10 @@ class AppTests(unittest.TestCase):
             self.assertEqual(app.metric[0].value, "1")
             self.assertEqual(app.metric[3].value, "1,752,000")
             self.assertEqual(len(app.dataframe[0].value), 8)
+            review_text = app.dataframe[0].value.set_index("Customer")["Why review"]
+            self.assertIn("currently consumed", review_text.loc["CUST-02"])
+            self.assertIn("projected", review_text.loc["CUST-02"])
+            self.assertEqual(app.dataframe[0].value.columns[-1], "Pacing Index")
             self.assertEqual(app.selectbox(key="detail_customer").value, "CUST-03")
             app.toggle(key="exceptions_only").set_value(False).run()
             self.assertEqual(len(app.dataframe[0].value), 12)
@@ -88,7 +92,10 @@ class AppTests(unittest.TestCase):
             app.multiselect[0].set_value([])
             app.multiselect[1].set_value([])
             app.selectbox(key="detail_customer").set_value("CUST-03").run()
-            self.assertEqual(app.metric[6].value, "180,000.7")
+            metric_values = {metric.label: metric.value for metric in app.metric}
+            self.assertEqual(metric_values["Total Credit Entitlement"], "120,000")
+            self.assertEqual(metric_values["Contract Months Elapsed"], "5.9 / 12")
+            self.assertEqual(metric_values["Credits Used"], "180,000.7")
             app.number_input[3].set_value(20.0).run()
             queue = app.dataframe[1].value.set_index("Customer")
             self.assertTrue(queue.loc["CUST-05", "Usage Accelerating"])

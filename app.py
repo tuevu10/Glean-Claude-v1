@@ -155,6 +155,9 @@ h1 {letter-spacing:-0.035em;} h2 {letter-spacing:-0.02em;}
 .intro-eyebrow {color:#6550B5;font-size:12px;font-weight:750;letter-spacing:.08em;text-transform:uppercase;margin-bottom:6px;}
 .intro-copy {color:#3E4B53;font-size:16px;line-height:1.65;margin:0 0 12px;}
 .intro-detail {background:#F7F4FF;border-radius:10px;padding:12px 14px;color:#574B70;font-size:14px;line-height:1.55;margin-bottom:10px;}
+.assumption-label {position:relative;display:inline-block;margin:4px 0 -8px;color:#24343D;font-size:14px;cursor:help;outline:none;}
+.assumption-label::after {content:attr(data-help);position:absolute;left:0;top:calc(100% + 7px);width:232px;padding:9px 11px;border:1px solid #DAD6CD;border-radius:8px;background:#FFFFFF;color:#3E4B53;font-size:12px;line-height:1.4;box-shadow:0 7px 20px rgba(45,37,68,.14);opacity:0;visibility:hidden;transform:translateY(-3px);transition:opacity .16s ease,transform .16s ease,visibility .16s;z-index:1000;pointer-events:none;}
+.assumption-label:hover::after,.assumption-label:focus::after {opacity:1;visibility:visible;transform:translateY(0);}
 </style>""", unsafe_allow_html=True)
 
 
@@ -176,6 +179,13 @@ def create_monthly_report(report_payload_json):
 @st.cache_data(show_spinner=False, max_entries=6)
 def create_audit_workbook(audit_payload_json):
     return generate_audit_workbook(json.loads(audit_payload_json))
+
+
+def assumption_label(label, definition):
+    """Render a label whose definition appears on hover or keyboard focus."""
+    st.markdown(
+        f'<div class="assumption-label" tabindex="0" data-help="{escape(definition, quote=True)}">'
+        f'{escape(label)}</div>', unsafe_allow_html=True)
 
 
 
@@ -234,13 +244,25 @@ with st.sidebar:
 
     defaults = Rules()
 
-    projected = st.number_input("Projected utilization threshold (%)", 100.0, 500.0, defaults.projected_utilization_threshold * 100, 5.0)
+    assumption_label("Projected utilization threshold (%)",
+        "Flags an active account for early exhaustion risk when projected contract usage strictly exceeds this percentage of entitlement.")
+    projected = st.number_input("Projected utilization threshold (%)", 100.0, 500.0,
+        defaults.projected_utilization_threshold * 100, 5.0, label_visibility="collapsed")
 
-    early = st.number_input("Early exhaustion days", 0, 365, defaults.early_exhaustion_days, 5)
+    assumption_label("Early exhaustion days",
+        "Flags an active account when its estimated exhaustion date is more than this many days before contract end.")
+    early = st.number_input("Early exhaustion days", 0, 365, defaults.early_exhaustion_days, 5,
+        label_visibility="collapsed")
 
-    under = st.number_input("Underutilization threshold (%)", 0.0, 100.0, defaults.underutilization_threshold * 100, 5.0)
+    assumption_label("Underutilization threshold (%)",
+        "Flags projected usage below this percentage after at least 25% of the contract term has elapsed.")
+    under = st.number_input("Underutilization threshold (%)", 0.0, 100.0,
+        defaults.underutilization_threshold * 100, 5.0, label_visibility="collapsed")
 
-    acceleration = st.number_input("Usage acceleration threshold (%)", 0.0, 1000.0, defaults.usage_acceleration_threshold * 100, 5.0)
+    assumption_label("Usage acceleration threshold (%)",
+        "Flags trailing 30-day average usage when it strictly exceeds the prior 30-day average by this percentage and meets the history and 1,000-credit materiality checks.")
+    acceleration = st.number_input("Usage acceleration threshold (%)", 0.0, 1000.0,
+        defaults.usage_acceleration_threshold * 100, 5.0, label_visibility="collapsed")
 
     st.caption("Acceleration also requires ≥1,000 additional credits and two complete 30-day contract windows. Underutilization starts at 25% elapsed.")
 
@@ -653,27 +675,30 @@ with dashboard_tab:
 
         if row["status"] == "DATA REVIEW":
 
-            return "Data review · missing daily usage records"
+            return f'Data review · {row["utilization_pct"]:.1%} currently consumed · missing daily usage records'
 
         if row["status"] == "NOT STARTED":
 
-            return "Not started · forecast unavailable"
+            return f'Not started · {row["utilization_pct"]:.1%} currently consumed · forecast unavailable'
 
         if row["status"] == "OVER ENTITLEMENT":
 
-            text = f'Over entitlement · {row["utilization_pct"]:.1%} consumed'
+            text = f'Over entitlement · {row["utilization_pct"]:.1%} currently consumed'
 
         elif row["status"] == "EARLY EXHAUSTION RISK":
 
-            text = f'Early exhaustion risk · {row["projected_utilization_pct"]:.1%} projected'
+            text = (f'Early exhaustion risk · {row["utilization_pct"]:.1%} currently consumed · '
+                    f'{row["projected_utilization_pct"]:.1%} projected')
 
         elif row["status"] == "UNDERUTILIZING":
 
-            text = f'Underutilizing · {row["projected_utilization_pct"]:.1%} projected'
+            text = (f'Underutilizing · {row["utilization_pct"]:.1%} currently consumed · '
+                    f'{row["projected_utilization_pct"]:.1%} projected')
 
         else:
 
-            text = f'On track · {row["projected_utilization_pct"]:.1%} projected'
+            text = (f'On track · {row["utilization_pct"]:.1%} currently consumed · '
+                    f'{row["projected_utilization_pct"]:.1%} projected')
 
         if row["missing_usage_days"]:
 
@@ -692,6 +717,8 @@ with dashboard_tab:
         "Why review": filtered.apply(review_signal, axis=1) if len(filtered) else pd.Series(dtype=str),
 
         "Current overage": filtered.estimated_overage_value,
+
+        "Pacing Index": filtered.pacing_index,
 
     })
 
@@ -739,6 +766,10 @@ with dashboard_tab:
 
                 help="Current overage only. Full forecast exposure is in the account details."),
 
+            "Pacing Index": st.column_config.NumberColumn(format="%.2f", width=115,
+
+                help="Pacing Index = Utilization % ÷ Contract Elapsed %. 1.00 is on pace; above 1.00 is ahead of pace; below 1.00 is behind pace."),
+
         }, on_select=select_queue_account, selection_mode="single-row", key=queue_key)
 
     st.caption(f"{len(filtered)} of {len(accounts)} accounts shown · P1 urgent / P2 high / P3 medium / P4 routine")
@@ -757,8 +788,8 @@ with dashboard_tab:
         contracts, usage, filtered, rules, as_of, source_name, source_hash)
     try:
         audit_payload_json = json.dumps(audit_payload, sort_keys=True, separators=(",", ":"))
-        audit_xlsx = create_audit_workbook(audit_payload_json)
-        st.download_button("Download Queue & Formula Audit (XLSX)", audit_xlsx,
+        st.download_button("Download Queue & Formula Audit (XLSX)",
+                           lambda: create_audit_workbook(audit_payload_json),
                            f"finance_action_queue_{as_of:%Y%m%d}.xlsx",
                            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
     except Exception as exc:
@@ -815,19 +846,30 @@ with details_tab:
 
         st.warning(m["data_notes"])
 
+    elapsed_contract_months = m["contract_elapsed_pct"] * m["term_months"]
     key_metrics = [
 
-        ("Credits Used", "total_credits_used", "number"),
+        ("Total Credit Entitlement", f'{m["annual_entitlement_credits"]:,.0f}',
+         "Contracted annual credit entitlement."),
 
-        ("Utilization", "utilization_pct", "pct"),
+        ("Contract Months Elapsed", f'{elapsed_contract_months:.1f} / {int(m["term_months"])}',
+         "Elapsed contract days expressed as the equivalent share of the contractual month term."),
 
-        ("Projected Utilization", "projected_utilization_pct", "pct"),
+        ("Credits Used", fmt(m["total_credits_used"]),
+         "Cumulative credits consumed through the analysis date."),
+
+        ("Utilization", fmt(m["utilization_pct"], "pct"),
+         "Credits used divided by total credit entitlement."),
+
+        ("Projected Utilization",
+         "N/A" if m["contract_lifecycle"] == "NOT STARTED" else fmt(m["projected_utilization_pct"], "pct"),
+         "Projected total contract usage divided by total credit entitlement."),
 
     ]
 
-    for col, (label, key, kind) in zip(st.columns(3), key_metrics):
+    for col, (label, value, help_text) in zip(st.columns(5), key_metrics):
 
-        col.metric(label, "N/A" if key == "projected_utilization_pct" and m["contract_lifecycle"] == "NOT STARTED" else fmt(m[key], kind))
+        col.metric(label, value, help=help_text)
 
     with st.expander("Contract, Balance & Exhaustion Details"):
 
@@ -988,10 +1030,9 @@ with dashboard_tab:
     report_payload_json = json.dumps(
         report_payload, sort_keys=True, separators=(",", ":"))
     try:
-        report_bytes = create_monthly_report(report_payload_json)
         st.download_button(
             "Generate Monthly Usage Report",
-            report_bytes,
+            lambda: create_monthly_report(report_payload_json),
             f"monthly_usage_report_{as_of:%Y_%m}.pptx",
             "application/vnd.openxmlformats-officedocument.presentationml.presentation",
             type="primary",

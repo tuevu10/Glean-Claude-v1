@@ -211,13 +211,15 @@ queue.showGridLines = false;
 queue.freezePanes.freezeRows(3);
 
 wb.recalculate();
-const formulaCheck = await wb.inspect({ kind: "formula", sheetId: "Account Metrics", range: `A3:${metricLast}${Math.min(mEnd,7)}`, maxChars: 8000, options: { maxResults: 200 } });
-const queueCheck = await wb.inspect({ kind: "region", sheetId: "Action Queue", range: `A3:M${Math.max(qEnd,4)}`, include: "values,formulas", maxChars: 8000, tableMaxRows: 15, tableMaxCols: 13 });
-const errorCheck = await wb.inspect({ kind: "match", searchTerm: "#REF!|#DIV/0!|#VALUE!|#NAME\\?|#N/A", options: { useRegex: true, maxResults: 100 }, maxChars: 6000 });
-console.log(formulaCheck.ndjson || formulaCheck);
-console.log(queueCheck.ndjson || queueCheck);
-console.log(errorCheck.ndjson || errorCheck);
-const preview = await wb.render({ sheetName: "Assumptions", range: "A1:D15", scale: 1, format: "png" });
-await fs.writeFile(previewPath, new Uint8Array(await preview.arrayBuffer()));
+if (process.env.VERIFY_XLSX === "1") {
+  const formulaCheck = await wb.inspect({ kind: "formula", sheetId: "Account Metrics", range: `A3:${metricLast}${Math.min(mEnd,7)}`, maxChars: 8000, options: { maxResults: 200 } });
+  const queueCheck = await wb.inspect({ kind: "region", sheetId: "Action Queue", range: `A3:M${Math.max(qEnd,4)}`, include: "values,formulas", maxChars: 8000, tableMaxRows: 15, tableMaxCols: 13 });
+  const errorCheck = await wb.inspect({ kind: "match", searchTerm: "#REF!|#DIV/0!|#VALUE!|#NAME\\?|#N/A", options: { useRegex: true, maxResults: 100 }, maxChars: 6000 });
+  console.log(formulaCheck.ndjson || formulaCheck);
+  console.log(queueCheck.ndjson || queueCheck);
+  console.log(errorCheck.ndjson || errorCheck);
+  const preview = await wb.render({ sheetName: "Assumptions", range: "A1:D15", scale: 1, format: "png" });
+  await fs.writeFile(previewPath, new Uint8Array(await preview.arrayBuffer()));
+}
 const xlsx = await SpreadsheetFile.exportXlsx(wb);
 await xlsx.save(outputPath);
