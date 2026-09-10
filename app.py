@@ -158,6 +158,19 @@ h1 {letter-spacing:-0.035em;} h2 {letter-spacing:-0.02em;}
 .assumption-label {position:relative;display:inline-block;margin:4px 0 -8px;color:#24343D;font-size:14px;cursor:help;outline:none;}
 .assumption-label::after {content:attr(data-help);position:absolute;left:0;top:calc(100% + 7px);width:232px;padding:9px 11px;border:1px solid #DAD6CD;border-radius:8px;background:#FFFFFF;color:#3E4B53;font-size:12px;line-height:1.4;box-shadow:0 7px 20px rgba(45,37,68,.14);opacity:0;visibility:hidden;transform:translateY(-3px);transition:opacity .16s ease,transform .16s ease,visibility .16s;z-index:1000;pointer-events:none;}
 .assumption-label:hover::after,.assumption-label:focus::after {opacity:1;visibility:visible;transform:translateY(0);}
+.calculation-table {width:100%;border-collapse:separate;border-spacing:0;border:1px solid #DADDE1;border-radius:8px;overflow:visible;font-size:14px;}
+.calculation-table th,.calculation-table td {padding:8px 10px;border-bottom:1px solid #E5E7EA;text-align:left;vertical-align:middle;}
+.calculation-table th {background:#F7F8FA;color:#52616B;font-weight:500;}
+.calculation-table tr:last-child td {border-bottom:0;}
+.calculation-table th:first-child,.calculation-table td:first-child {width:62%;}
+.calculation-metric {position:relative;display:inline-block;color:#24343D;cursor:help;outline:none;border-bottom:1px dotted #8B7BC4;}
+.calculation-metric::after {content:attr(data-help);position:absolute;left:calc(100% + 12px);top:-9px;width:360px;padding:9px 11px;border:1px solid #DAD6CD;border-radius:8px;background:#FFFFFF;color:#3E4B53;font-size:12px;font-weight:400;line-height:1.45;box-shadow:0 7px 20px rgba(45,37,68,.14);opacity:0;visibility:hidden;transform:translateY(-3px);transition:opacity .16s ease,transform .16s ease,visibility .16s;z-index:1000;pointer-events:none;white-space:normal;}
+.calculation-metric:hover::after,.calculation-metric:focus::after {opacity:1;visibility:visible;transform:translateY(0);}
+.calculation-metric .info-mark {color:#7A858C;font-size:12px;margin-left:3px;}
+.customer-kpi-card {box-sizing:border-box;min-height:80px;padding:8px 10px;background:#F5F8F9;border:1px solid #E1E9EC;border-radius:8px;}
+.customer-kpi-label {min-height:30px;color:#24343D;font-size:12px;line-height:1.25;}
+.customer-kpi-value {color:#24343D;font-size:1.35rem;line-height:1.3;white-space:nowrap;}
+.customer-kpi-value .over-entitlement-value {color:#A33A45;font-weight:650;}
 </style>""", unsafe_allow_html=True)
 
 
@@ -867,11 +880,6 @@ with details_tab:
 
     elapsed_contract_months = m["contract_elapsed_pct"] * m["term_months"]
     key_metrics = [
-
-        ("Credits Used / Total Credit Entitlement",
-         f'{m["total_credits_used"]:,.1f} / {m["annual_entitlement_credits"]:,.0f}',
-         "Cumulative credits consumed through the analysis date compared with contracted annual credit entitlement."),
-
         ("Remaining Credit Available", f'{m["remaining_credits"]:,.1f}',
          "Total credit entitlement minus credits used. A negative value indicates consumption above entitlement."),
 
@@ -887,7 +895,17 @@ with details_tab:
 
     ]
 
-    for col, (label, value, help_text) in zip(st.columns(5), key_metrics):
+    metric_columns = st.columns(5)
+    used_class = "over-entitlement-value" if m["total_credits_used"] > m["annual_entitlement_credits"] else ""
+    with metric_columns[0]:
+        st.markdown(
+            '<div class="customer-kpi-card">'
+            '<div class="customer-kpi-label" title="Cumulative credits consumed through the analysis date compared with contracted annual credit entitlement.">'
+            'Credits Used / Total Credit Entitlement&nbsp; ⓘ</div>'
+            f'<div class="customer-kpi-value"><span class="{used_class}">{m["total_credits_used"]:,.1f}</span>'
+            f' / {m["annual_entitlement_credits"]:,.0f}</div></div>', unsafe_allow_html=True)
+
+    for col, (label, value, help_text) in zip(metric_columns[1:], key_metrics):
 
         col.metric(label, value, help=help_text)
 
@@ -895,25 +913,42 @@ with details_tab:
 
         fields = [
 
-            ("Annual Contract Value", "annual_contract_value_usd", "usd"),
+            ("Annual Contract Value", "annual_contract_value_usd", "usd",
+             "Contract value from the source workbook for the annual term."),
 
-            ("Entitlement", "annual_entitlement_credits", "number"),
+            ("Entitlement", "annual_entitlement_credits", "number",
+             "Total credits contracted for the annual term."),
 
-            ("Remaining Credits", "remaining_credits", "number"),
+            ("Remaining Credits", "remaining_credits", "number",
+             "Entitlement minus credits used. A negative balance means usage is over entitlement."),
 
-            ("Contract Elapsed", "contract_elapsed_pct", "pct"),
+            ("Contract Elapsed", "contract_elapsed_pct", "pct",
+             "Elapsed contract days divided by total contract days, measured through the analysis cutoff."),
 
-            ("Pacing Index", "pacing_index", "ratio"),
+            ("Pacing Index", "pacing_index", "ratio",
+             "Utilization percentage divided by contract elapsed percentage. 1.00 is on pace; above 1.00 is ahead; below 1.00 is behind."),
 
-            ("Days to Exhaustion", "days_to_exhaustion", "number"),
+            ("Days to Exhaustion", "days_to_exhaustion", "number",
+             "Remaining credits divided by trailing 30-day average daily usage. Already exhausted accounts show zero."),
 
-            ("Exhaustion Date", "estimated_exhaustion_date", "date"),
+            ("Exhaustion Date", "estimated_exhaustion_date", "date",
+             "First actual date entitlement was reached; otherwise the analysis date plus rounded-up days to exhaustion."),
 
-            ("Current Overage", "estimated_overage_value", "usd"),
+            ("Current Overage", "estimated_overage_value", "usd",
+             "Maximum of credits used minus entitlement and zero, multiplied by contract value per credit. This is an estimate, not an invoice."),
 
         ]
 
-        st.table(pd.DataFrame([{"Metric": label, "Value": fmt(m[key], kind)} for label, key, kind in fields]))
+        detail_rows = "".join(
+            '<tr><td><span class="calculation-metric" tabindex="0" data-help="' +
+            escape(definition, quote=True) + '">' + escape(label) +
+            '<span class="info-mark">ⓘ</span></span></td><td>' +
+            escape(fmt(m[key], kind)) + '</td></tr>'
+            for label, key, kind, definition in fields
+        )
+        st.markdown(
+            '<table class="calculation-table"><thead><tr><th>Metric</th><th>Value</th></tr></thead><tbody>' +
+            detail_rows + '</tbody></table>', unsafe_allow_html=True)
 
         st.caption("Negative balance means overconsumption. Exhausted accounts show the first actual exhaustion date. Future dates assume the recent rate continues, even beyond contract end.")
 
@@ -985,7 +1020,28 @@ with details_tab:
 
         }
 
-        st.table(pd.DataFrame([{"Metric": label, "Value": fmt(m[key], "pct" if key.endswith("pct") else "usd" if "value" in key else "number")} for key, label in detail_fields.items()]))
+        detail_definitions = {
+            "trailing_30_day_credits": "Sum of daily credits in the 30 calendar days ending on the analysis date.",
+            "prior_30_day_credits": "Sum of daily credits in the 30 calendar days immediately before the trailing period.",
+            "trailing_30_day_average_daily_usage": "Trailing-period credits divided by eligible contract days in that period, up to 30 days. Unavailable when expected daily records are missing.",
+            "prior_30_day_average_daily_usage": "Prior-period credits divided by eligible contract days in that period, up to 30 days. Unavailable when expected daily records are missing.",
+            "usage_growth_30_day_pct": "Trailing 30-day credits divided by prior 30-day credits, minus 1. It is unavailable when the prior period is zero but recent usage is positive, or when daily records are incomplete.",
+            "forecast_remaining_usage": "Trailing average daily usage multiplied by remaining contract days for an active contract. Forecasts are withheld when daily records are incomplete or the contract has not started.",
+            "projected_total_contract_usage": "Credits used to date plus forecast remaining credits.",
+            "projected_overage_value": "Maximum of projected total credits minus entitlement and zero, multiplied by implied value per credit. This is a commercial proxy, not an invoice amount.",
+            "projected_unused_contract_value": "Maximum of entitlement minus projected total credits and zero, multiplied by implied value per credit. This is an adoption indicator, not a refund estimate.",
+            "implied_contract_value_per_credit": "Annual contract value divided by annual credit entitlement.",
+        }
+        detail_rows = []
+        for key, label in detail_fields.items():
+            value = fmt(m[key], "pct" if key.endswith("pct") else "usd" if "value" in key else "number")
+            detail_rows.append(
+                '<tr><td><span class="calculation-metric" tabindex="0" '
+                f'data-help="{escape(detail_definitions[key], quote=True)}">{escape(label)}</span></td>'
+                f'<td>{escape(value)}</td></tr>')
+        st.markdown(
+            '<table class="calculation-table"><thead><tr><th>Metric</th><th>Value</th></tr></thead><tbody>'
+            + "".join(detail_rows) + '</tbody></table>', unsafe_allow_html=True)
 
         st.caption(f"{m['growth_note']}. Total projected overage includes current overage; do not add the two. Unused contract value is an adoption/renewal indicator, not a refund or revenue-loss estimate.")
 

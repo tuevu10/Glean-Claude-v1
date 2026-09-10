@@ -96,9 +96,13 @@ class AppTests(unittest.TestCase):
             app.multiselect[1].set_value([])
             app.selectbox(key="detail_customer").set_value("CUST-03").run()
             metric_values = {metric.label: metric.value for metric in app.metric}
-            self.assertEqual(metric_values["Credits Used / Total Credit Entitlement"], "180,000.7 / 120,000")
             self.assertEqual(metric_values["Remaining Credit Available"], "-60,000.7")
             self.assertEqual(metric_values["Contract Months Elapsed"], "5.9 / 12")
+            credit_card = next(markdown.value for markdown in app.markdown
+                               if "Credits Used / Total Credit Entitlement" in markdown.value)
+            self.assertIn("180,000.7", credit_card)
+            self.assertIn("120,000", credit_card)
+            self.assertIn("over-entitlement-value", credit_card)
             app.number_input[3].set_value(20.0).run()
             queue = app.dataframe[1].value.set_index("Customer")
             self.assertTrue(queue.loc["CUST-05", "Usage Accelerating"])
