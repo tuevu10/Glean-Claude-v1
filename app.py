@@ -604,11 +604,10 @@ with dashboard_tab:
         st.markdown('<div class="chart-labels"><span class="contract-label">&#8226; Total contracted credits</span>'
                     '<span class="usage-label">&#8226; Cumulative Consumption</span></div>',
                     unsafe_allow_html=True)
-        average_addition = chart_data.attrs.get("average_monthly_contracted_addition")
         st.caption(
             "**How projections are calculated**  \n"
-            f"1. **Total contracted credits:** credits contracted at the snapshot + the average credits added per "
-            f"completed month ({fmt(average_addition)} per month) × remaining months.  \n"
+            "1. **Total contracted credits:** credits contracted at the snapshot + the average credits added per "
+            "completed month × remaining months.  \n"
             "2. **Cumulative consumption:** credits used at the snapshot + each customer's trailing 30-day average "
             "daily usage × its remaining active contract days.  \n"
             "Dashed lines show projections. Dates without usage events are treated as zero consumption."
