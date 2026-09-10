@@ -32,21 +32,21 @@ class FinanceTests(unittest.TestCase):
         self.assertEqual(m.overage_credits, 0)
         self.assertEqual(pacing_chart_data(m, u)["Actual cumulative usage"].dropna().iloc[-1], 1)
 
-    def test_missing_feed_withholds_forecast_and_acceleration(self):
+    def test_sparse_usage_events_are_forecast_and_classified(self):
         c, u = synthetic(dates=pd.date_range("2026-07-02", periods=30), credits=[100]*30)
         m = calculate_accounts(c, u).iloc[0]
-        self.assertEqual(m.status, "DATA REVIEW")
-        self.assertFalse(m.usage_accelerating)
-        self.assertFalse(m.forecast_available)
-        self.assertTrue(pd.isna(m.projected_unused_contract_value))
-        self.assertEqual(account_facts(m)["projected_utilization"], "unavailable")
+        self.assertEqual(m.status, "UNDERUTILIZING")
+        self.assertTrue(m.usage_accelerating)
+        self.assertTrue(m.forecast_available)
+        self.assertAlmostEqual(m.projected_total_contract_usage, 18_300)
+        self.assertNotEqual(account_facts(m)["projected_utilization"], "unavailable")
 
     def test_observed_overage_remains_urgent_despite_gaps(self):
         c, u = synthetic(dates=["2026-07-31"], credits=[120], entitlement=100)
         m = calculate_accounts(c, u).iloc[0]
         self.assertEqual(m.status, "OVER ENTITLEMENT")
         self.assertEqual(m.estimated_overage_value, 10)
-        self.assertTrue(pd.isna(m.projected_overage_value))
+        self.assertAlmostEqual(m.projected_overage_value, 316)
 
     def test_explicit_zero_days_and_expired_complete_contract(self):
         c, u = synthetic(dates=pd.date_range("2026-01-01", "2026-12-31"), credits=[0]*365)
@@ -94,8 +94,8 @@ class FinanceTests(unittest.TestCase):
         c, u = synthetic(dates=["2026-04-02"], credits=[0])
         m = calculate_accounts(c, u).iloc[0]
         self.assertEqual(m.missing_usage_days, 91)
-        self.assertEqual(m.status, "DATA REVIEW")
-        self.assertTrue(pd.isna(m.usage_growth_30_day_pct))
+        self.assertEqual(m.status, "UNDERUTILIZING")
+        self.assertEqual(m.usage_growth_30_day_pct, 0)
         self.assertTrue(pd.isna(m.days_to_exhaustion))
         self.assertTrue(pd.isna(m.estimated_exhaustion_date))
 
@@ -113,7 +113,18 @@ class FinanceTests(unittest.TestCase):
         self.assertEqual(a.loc["F", "status"], "NOT STARTED")
         self.assertEqual(a.loc["E", "contract_lifecycle"], "EXPIRED")
         self.assertEqual(a.loc["E", "days_elapsed"], 365)
-        self.assertTrue(pd.isna(a.loc["E", "forecast_remaining_usage"]))
+        self.assertEqual(a.loc["E", "forecast_remaining_usage"], 0)
+
+    def test_active_contract_without_usage_rows_remains_visible(self):
+        c, u = synthetic(dates=["2026-07-31"], credits=[0])
+        no_events = c.iloc[0].copy()
+        no_events["customer_id"] = "CUST-17"
+        c, u = normalize(pd.concat([c, pd.DataFrame([no_events])]), u)
+        accounts = calculate_accounts(c, u).set_index("customer_id")
+        self.assertIn("CUST-17", accounts.index)
+        self.assertEqual(accounts.loc["CUST-17", "total_credits_used"], 0)
+        self.assertTrue(accounts.loc["CUST-17", "forecast_available"])
+        self.assertEqual(accounts.loc["CUST-17", "status"], "UNDERUTILIZING")
 
     def test_exhausted_date_and_exact_entitlement(self):
         c, u = synthetic(dates=["2026-01-01", "2026-01-02"], credits=[60, 40], entitlement=100)

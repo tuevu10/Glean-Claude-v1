@@ -150,6 +150,9 @@ function pct(value) {
   const plotLeft = 108;
   const plotWidth = 1090;
   const projectionLeft = plotLeft + plotWidth * (data.chart.snapshot_month / 12);
+  addRect(slide, { left: projectionLeft, top: 190,
+                   width: plotLeft + plotWidth - projectionLeft, height: 304 },
+          `${C.cream}/55`);
   const chart = slide.charts.add("line", {
     position: { left: 58, top: 162, width: 1164, height: 360 },
     categories: data.chart.categories,
@@ -171,8 +174,6 @@ function pct(value) {
              majorGridlines: { style: "solid", fill: C.grid, width: 1 } },
   });
   chart.title = "";
-  addRect(slide, { left: projectionLeft, top: 190, width: plotLeft + plotWidth - projectionLeft, height: 304 },
-          `${C.cream}/55`);
   addText(slide, "Projection", { left: 934, top: 144, width: 150, height: 24 },
           { fontSize: 14, italic: true, color: C.slate, alignment: "center" });
   addText(slide, "●  Total contracted credits", { left: 350, top: 522, width: 255, height: 24 },

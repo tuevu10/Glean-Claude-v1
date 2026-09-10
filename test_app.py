@@ -82,9 +82,12 @@ class AppTests(unittest.TestCase):
             self.assertIn("Jul 31, 2026", import_summary)
             self.assertIn("Data Audit", [expander.label for expander in app.expander])
             self.assertEqual(len(app.dataframe[0].value), 8)
+            self.assertEqual(len(app.dataframe[1].value), 12)
             self.assertEqual(app.dataframe[0].value.columns[:2].tolist(), ["Priority", "Status"])
             self.assertEqual(app.dataframe[0].value.iloc[0]["Priority"], "P1 - Urgent")
             self.assertEqual(app.dataframe[0].value.iloc[0]["Status"], "Over Entitlement")
+            self.assertEqual(app.multiselect[2].options,
+                             ["P1 - Urgent", "P2 - High", "P3 - Medium", "P4 - Routine"])
             review_text = app.dataframe[0].value.set_index("Customer")["Why review"]
             self.assertIn("currently consumed", review_text.loc["CUST-02"])
             self.assertIn("projected", review_text.loc["CUST-02"])

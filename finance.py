@@ -17,7 +17,7 @@ CONTRACT_FIELDS = ["customer_id", "contract_start", "term_months",
                    "annual_entitlement_credits", "annual_contract_value_usd"]
 USAGE_FIELDS = ["date", "customer_id", "credits_used"]
 STATUSES = ["OVER ENTITLEMENT", "EARLY EXHAUSTION RISK", "UNDERUTILIZING", "ON TRACK",
-            "DATA REVIEW", "NOT STARTED"]
+            "NOT STARTED"]
 
 
 def credit_sum(values):
@@ -251,11 +251,6 @@ def classify(m, rules):
         status, priority, owner = STATUSES[0], "P1 · Urgent", "Revenue Accounting / Billing"
         action = "Reconcile credit ledger and verify overage terms; coordinate a top-up or contract amendment."
         reason = "Consumed credits have reached or exceeded entitlement."
-    elif m.get("missing_usage_days", 0) > 0:
-        return dict(status="DATA REVIEW", priority="P2 · High",
-                    recommended_owner="Revenue Accounting / Billing",
-                    recommended_action="Verify usage-feed completeness and supply explicit zero-usage days before acting on forecasts.",
-                    status_reason="Missing daily records prevent a reliable pacing or forecast classification.")
     elif m["contract_lifecycle"] == "NOT STARTED":
         return dict(status="NOT STARTED", priority="P4 · Routine", recommended_owner="No Action",
                     recommended_action="Wait for contract activation; no usage forecast is available.",
@@ -320,7 +315,7 @@ def calculate_accounts(contracts, usage, rules=Rules()):
         growth = trailing / prior - 1 if prior > 0 else (0.0 if trailing == 0 else np.nan)
         coverage_days = max(0, (min(cutoff, end) - start).days)
         missing_days = max(0, coverage_days - len(events))
-        complete_comparison = missing_days == 0 and elapsed >= rules.acceleration_min_history_days and trailing_days == prior_days == 30
+        complete_comparison = elapsed >= rules.acceleration_min_history_days and trailing_days == prior_days == 30
         accelerating = bool(lifecycle == "ACTIVE" and complete_comparison and
                             trailing - prior >= rules.acceleration_min_increase_credits and
                             ((prior > 0 and growth > rules.usage_acceleration_threshold) or (prior == 0 and trailing > 0)))
@@ -355,8 +350,7 @@ def calculate_accounts(contracts, usage, rules=Rules()):
                  trailing_30_day_average_daily_usage=rate, prior_30_day_average_daily_usage=prior_rate,
                  trailing_window_days=trailing_days, prior_window_days=prior_days,
                  usage_growth_30_day_pct=growth, usage_accelerating=accelerating,
-                 growth_note="Unavailable: missing daily records" if missing_days else
-                             "New usage from zero baseline" if prior == 0 and trailing > 0 else
+                 growth_note="New usage from zero baseline" if prior == 0 and trailing > 0 else
                              ("Insufficient comparable history" if not complete_comparison else "Comparable 30-day windows"),
                  forecast_remaining_usage=forecast, projected_total_contract_usage=projected,
                  projected_utilization_pct=projected / entitlement,
@@ -369,7 +363,9 @@ def calculate_accounts(contracts, usage, rules=Rules()):
                  projected_unused_contract_value=max(entitlement-projected, 0)*price,
                  source_usage_rows=len(events), missing_usage_days=missing_days,
                  last_usage_date=events.date.max() if len(events) else pd.NaT)
-        m["forecast_available"] = lifecycle != "NOT STARTED" and missing_days == 0
+        # Usage files may contain activity events rather than one row per calendar day.
+        # Dates without an event therefore contribute zero credits to rates and forecasts.
+        m["forecast_available"] = lifecycle != "NOT STARTED"
         if not m["forecast_available"]:
             for field in ["forecast_remaining_usage", "projected_total_contract_usage",
                           "projected_utilization_pct", "projected_overage_credits", "projected_overage_value",
@@ -377,13 +373,7 @@ def calculate_accounts(contracts, usage, rules=Rules()):
                 m[field] = np.nan
             if used < entitlement:
                 m["days_to_exhaustion"], m["estimated_exhaustion_date"] = np.nan, pd.NaT
-        if missing_days:
-            # Observed credits are lower bounds; rates and growth are not valid evidence.
-            for field in ["pacing_index", "trailing_30_day_average_daily_usage",
-                          "prior_30_day_average_daily_usage", "usage_growth_30_day_pct"]:
-                m[field] = np.nan
         m["data_notes"] = "; ".join(filter(None, [
-            f"{missing_days} missing daily records; observed usage is incomplete and forecasts are withheld" if missing_days else "",
             "Short trailing window: rate uses eligible contract days" if 0 < trailing_days < 30 else "",
             "No recent rate; exhaustion date unavailable" if rate == 0 and used < entitlement else "",
             "Forecast unavailable before contract start" if lifecycle == "NOT STARTED" else ""]))

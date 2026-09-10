@@ -11,7 +11,10 @@ def portfolio_chart(accounts, usage, start, end, snapshot):
     daily = events.groupby("date").credits_used.agg(credit_sum)
     actual = 0.0
     projected = None
-    forecast_ok = bool(accounts.forecast_available.all())
+    # Future-starting contracts have no usage history yet and should not suppress
+    # the projection for accounts active at the snapshot.
+    forecast_ok = bool(accounts.loc[
+        accounts.contract_start.le(snapshot), "forecast_available"].all())
     snapshot = min(pd.Timestamp(snapshot), end - pd.Timedelta(days=1))
     first_month = pd.Timestamp(start).to_period("M")
     snapshot_month = snapshot.to_period("M")

@@ -382,21 +382,21 @@ with st.sidebar.expander("Data Audit", expanded=False):
 
 
 
-issues = accounts.loc[accounts.data_notes.ne(""), ["customer_id", "data_notes"]]
-
-if not issues.empty:
-
-    st.warning(f"{len(issues)} account(s) have data or forecast limitations. Review Data & calculation audit below.")
-
-    st.caption("Observed usage and overage may be lower bounds where daily records are missing. Forecast-dependent values are unavailable for those accounts.")
-
-
-
 def open_account(customer_id):
 
     st.session_state["detail_customer"] = customer_id
 
     st.session_state["workspace_view"] = "Customer Details"
+
+
+issues = accounts.loc[accounts.data_notes.ne(""), ["customer_id", "data_notes"]]
+
+if not issues.empty:
+
+    st.warning(f"{len(issues)} account(s) have forecast notes.")
+    st.button("Review Forecast Notes", type="tertiary", key="review_forecast_notes",
+              on_click=open_account, args=(issues.iloc[0].customer_id,),
+              help="Open the first affected account in Customer Details. The full calculation audit is at the bottom of that tab.")
 
 
 
@@ -588,7 +588,7 @@ with dashboard_tab:
                      alt.Tooltip("Credits:Q", format=",.1f")])
         chart_layers = [contract_line, contract_projection, usage_lines]
         projection_start = snapshot_date + pd.Timedelta(days=1)
-        if projection_start < period_end and summary.forecast_available.all():
+        if projection_start < period_end:
             region = pd.DataFrame({"start": [projection_start], "end": [period_end],
                                    "middle": [projection_start + (period_end - projection_start) / 2],
                                    "label_y": [axis_max * 0.97]})
@@ -611,7 +611,7 @@ with dashboard_tab:
             f"completed month ({fmt(average_addition)} per month) × remaining months.  \n"
             "2. **Cumulative consumption:** credits used at the snapshot + each customer's trailing 30-day average "
             "daily usage × its remaining active contract days.  \n"
-            "Dashed lines show projections. Consumption is not projected when daily usage records are incomplete."
+            "Dashed lines show projections. Dates without usage events are treated as zero consumption."
         )
 
         flags, utilization = st.columns(2, gap="medium")
@@ -652,8 +652,6 @@ with dashboard_tab:
             f"{projected:.0f}% or estimated exhaustion is more than {early} days before contract end.  \n"
             f"**Underutilizing:** at least 25% of the contract has elapsed and projected utilization is below {under:.0f}%.  \n"
             "**On Track:** no exception rule applies.  \n"
-            "**Data Review:** expected daily usage records are missing, so pacing and forecasts are withheld; "
-            "an account already over entitlement remains Over Entitlement.  \n"
             "**Not Started:** the analysis date is before the contract begins, so forecast metrics are unavailable."
         )
         statuses = st.multiselect("Status", STATUSES, key="filter_status", help=status_help,
@@ -661,11 +659,12 @@ with dashboard_tab:
 
         priority_help = (
             "**P1 - Urgent:** over entitlement; Billing should reconcile current exposure.  \n"
-            "**P2 - High:** early exhaustion risk or incomplete usage data requiring review.  \n"
+            "**P2 - High:** early exhaustion risk requiring account-team review.  \n"
             "**P3 - Medium:** underutilizing, usage-accelerating On Track, or expired On Track accounts requiring follow-up.  \n"
             "**P4 - Routine:** On Track or Not Started accounts with no immediate action."
         )
-        priorities = st.multiselect("Priority", sorted(accounts.priority.unique()),
+        priority_options = ["P1 · Urgent", "P2 · High", "P3 · Medium", "P4 · Routine"]
+        priorities = st.multiselect("Priority", priority_options,
                                     key="filter_priority", help=priority_help,
                                     format_func=lambda priority: priority.replace(" · ", " - "))
 
@@ -705,7 +704,8 @@ with dashboard_tab:
 
     }
 
-    display = filtered[list(QUEUE)].rename(columns=QUEUE).copy()
+    # Full Queue Metrics is an inventory view and always includes every contract.
+    display = accounts[list(QUEUE)].rename(columns=QUEUE).copy()
 
     for col in ["Utilization %", "Contract Elapsed %", "Projected Utilization %"]:
 
@@ -733,10 +733,6 @@ with dashboard_tab:
 
     def review_signal(row):
 
-        if row["status"] == "DATA REVIEW":
-
-            return f'Data review · {row["utilization_pct"]:.1%} currently consumed · missing daily usage records'
-
         if row["status"] == "NOT STARTED":
 
             return f'Not started · {row["utilization_pct"]:.1%} currently consumed · forecast unavailable'
@@ -759,10 +755,6 @@ with dashboard_tab:
 
             text = (f'On track · {row["utilization_pct"]:.1%} currently consumed · '
                     f'{row["projected_utilization_pct"]:.1%} projected')
-
-        if row["missing_usage_days"]:
-
-            text += " · Incomplete feed"
 
         return text + (" · Accelerating" if row["usage_accelerating"] else "")
 
@@ -1007,10 +999,6 @@ with details_tab:
 
         st.caption("Actual usage stops at the analysis cutoff; expected pacing continues to the full contract entitlement.")
 
-        if m["missing_usage_days"]:
-
-            st.caption("Incomplete feed: this is observed cumulative usage only, not a complete consumption ledger.")
-
     with right:
 
         st.markdown("**Daily Usage Trend**")
@@ -1031,9 +1019,7 @@ with details_tab:
 
         st.altair_chart(daily_chart.properties(height=310), width="stretch")
 
-        if m["missing_usage_days"]:
-
-            st.caption("Missing dates are shown with zero-height bars; they are unknown, not confirmed zero usage.")
+        st.caption("Dates without usage events are shown as zero-height bars.")
 
     
 
@@ -1056,10 +1042,10 @@ with details_tab:
         detail_definitions = {
             "trailing_30_day_credits": "Sum of daily credits in the 30 calendar days ending on the analysis date.",
             "prior_30_day_credits": "Sum of daily credits in the 30 calendar days immediately before the trailing period.",
-            "trailing_30_day_average_daily_usage": "Trailing-period credits divided by eligible contract days in that period, up to 30 days. Unavailable when expected daily records are missing.",
-            "prior_30_day_average_daily_usage": "Prior-period credits divided by eligible contract days in that period, up to 30 days. Unavailable when expected daily records are missing.",
-            "usage_growth_30_day_pct": "Trailing 30-day credits divided by prior 30-day credits, minus 1. It is unavailable when the prior period is zero but recent usage is positive, or when daily records are incomplete.",
-            "forecast_remaining_usage": "Trailing average daily usage multiplied by remaining contract days for an active contract. Forecasts are withheld when daily records are incomplete or the contract has not started.",
+            "trailing_30_day_average_daily_usage": "Trailing-period credits divided by eligible calendar days in that period, up to 30 days. Dates without usage events count as zero.",
+            "prior_30_day_average_daily_usage": "Prior-period credits divided by eligible calendar days in that period, up to 30 days. Dates without usage events count as zero.",
+            "usage_growth_30_day_pct": "Trailing 30-day credits divided by prior 30-day credits, minus 1. It is unavailable when the prior period is zero but recent usage is positive.",
+            "forecast_remaining_usage": "Trailing average daily usage multiplied by remaining contract days for an active contract. The forecast is unavailable before the contract starts.",
             "projected_total_contract_usage": "Credits used to date plus forecast remaining credits.",
             "projected_overage_value": "Maximum of projected total credits minus entitlement and zero, multiplied by implied value per credit. This is a commercial proxy, not an invoice amount.",
             "projected_unused_contract_value": "Maximum of entitlement minus projected total credits and zero, multiplied by implied value per credit. This is an adoption indicator, not a refund estimate.",
@@ -1102,13 +1088,13 @@ with details_tab:
 
     - Elapsed days = cutoff minus start, clamped to the contract term. Utilization = used / entitlement; pacing = utilization / elapsed fraction.
 
-    - Recent periods = the 30 calendar days ending on the as-of date and the preceding 30 days. Rates divide by eligible contract days, up to 30. Missing daily records withhold rates and forecasts and require data review.
+    - Recent periods = the 30 calendar days ending on the as-of date and the preceding 30 days. Rates divide by eligible contract days, up to 30. Dates without usage events count as zero consumption.
 
     - Projected total = consumed + recent daily rate × remaining contract days. Inactive terms have no future usage forecast.
 
     - Overage proxy = max(consumed − entitlement, 0) × ACV / entitlement.
 
-    - Rules are evaluated in order: over entitlement, data review for missing records, not started, early exhaustion risk (active contracts), underutilizing, then on track. Acceleration is independent and requires complete records.
+    - Rules are evaluated in order: over entitlement, not started, early exhaustion risk (active contracts), underutilizing, then on track. Acceleration is independent and requires two complete calendar windows.
 
     - Priority order is P1, P2, P3, P4; ties sort by current overage value, projected overage value, then customer ID.
 

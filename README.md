@@ -150,10 +150,10 @@ For exhausted accounts, days to exhaustion is zero and the exhaustion date is th
 first actual event day whose cumulative usage reached entitlement. A forward
 exhaustion date can lie beyond contract end; it is a hypothetical continuation of
 the recent rate. Inactive or zero-rate unexhausted accounts have no exhaustion date.
-Expired contracts with complete records have zero remaining forecast. Future contracts
-use NOT STARTED and have unavailable forecast-dependent values in the UI and XLSX.
-Incomplete feeds also withhold forecasts, rates, growth, and pacing; observed
-usage and overage remain visible as lower bounds.
+Expired contracts have zero remaining forecast. Future contracts use NOT STARTED and
+have unavailable forecast-dependent values in the UI and XLSX. Usage files may contain
+activity events rather than a row for every date, so dates without events count as zero
+consumption in calendar-day rates and forecasts.
 
 Chart points use day boundaries: zero at contract start, actual daily consumption
 at the following midnight, and entitlement at the exclusive contract end. Future
@@ -171,10 +171,9 @@ primary rule wins; the acceleration flag is independent.
 | EARLY EXHAUSTION RISK | Active, not exhausted, and projected utilization > 110% OR exhaustion date more than 30 days before end | P2 / Sales / Account Management |
 | UNDERUTILIZING | Elapsed >= 25% and projected utilization < 70% | P3 / Customer Success |
 | ON TRACK | No primary exception triggered | P4 / No Action |
-| DATA REVIEW | Missing expected daily records, unless observed usage already exhausts entitlement | P2 / Revenue Accounting / Billing |
 | NOT STARTED | Contract has not started | P4 / No Action |
 
-Rule precedence: over entitlement, data review, not started, then forecast rules.
+Rule precedence: over entitlement, not started, then forecast rules.
 The 100% exhaustion boundary is fixed. Buffer/history days must be integers;
 minimum acceleration history cannot be less than 60 days.
 
@@ -197,13 +196,12 @@ does not trigger the date rule. No rounding is applied before comparisons.
 - Invalid required fields, nonpositive entitlement, negative credits or ACV,
   duplicates, unknown IDs, and out-of-contract usage stop processing with a clear
   error. They are never silently discarded. ACV may be zero.
-- Missing daily rows produce DATA REVIEW and withhold forecasts, rates, growth,
-  and pacing. Supply explicit zero-usage records to confirm inactivity. Observed
-  over-entitlement accounts stay urgent with incomplete-feed warnings. A short but
-  complete contract history uses eligible contract days rather than dividing by 30.
+- Dates without usage rows count as zero consumption. Recent rates divide recorded
+  activity by the eligible calendar days in each window. A short contract history uses
+  its eligible contract days rather than dividing by 30.
 - A completely empty usage sheet cannot establish an as-of date and is rejected.
-  Individual customers with no records remain with zero observed usage and DATA
-  REVIEW after activation; explicit daily zeros permit normal classification.
+  Individual customers with no records remain visible with zero observed usage and
+  follow the normal status rules after activation.
 - Forecasts hold recent usage constant. They do not model seasonality, upcoming
   launches, shutdowns, negotiated amendments, or probability of renewal.
 - Current/projected overage dollars are contract-value proxies, not invoice amounts.

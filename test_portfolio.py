@@ -20,6 +20,11 @@ class PortfolioTests(unittest.TestCase):
         self.assertLess(chart.loc["2026-02-01", "Projected contracted credits"], 200)
         self.assertEqual(chart.loc["2026-03-01", "Projected contracted credits"], 200)
         self.assertEqual(chart.attrs["average_monthly_contracted_addition"], 100)
+        accounts.loc[accounts.customer_id.eq("B"), "forecast_available"] = False
+        chart = portfolio_chart(accounts, usage, pd.Timestamp("2026-01-01"),
+                                pd.Timestamp("2026-03-01"), pd.Timestamp("2026-01-31"))
+        self.assertTrue(chart.loc[chart.date.gt(pd.Timestamp("2026-02-01")),
+                                  "Projected consumption"].notna().all())
 
     def test_projection_stops_at_contract_end_and_pacing_matches(self):
         accounts = pd.DataFrame([dict(customer_id="A", contract_start=pd.Timestamp("2026-01-01"),

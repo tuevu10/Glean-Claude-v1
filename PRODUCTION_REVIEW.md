@@ -8,7 +8,7 @@ does not approve automatic billing, scheduled monitoring, or shared hosting.
 | Priority | Finding | Disposition |
 |---|---|---|
 | P1 | Fractional sums and cumulative sums disagreed at exact exhaustion, crashing the portfolio | Fixed: consistent decimal accumulation for totals, windows, crossing date, and chart |
-| P1 | Missing records could drive unsupported forecast flags | Fixed: DATA REVIEW, forecasts/rates/pacing/growth withheld, acceleration suppressed. Observed overage stays urgent and marked incomplete |
+| P1 | Sparse activity files could suppress valid forecasts | Fixed: dates without usage events count as zero consumption; source reconciliation still catches import mismatches, duplicates, invalid values, and out-of-contract activity |
 | P2 | Numeric dates silently normalized to 1970 | Fixed: numeric dates rejected; require real Excel dates or ISO text |
 | P2 | Future contracts exposed zero forecasts and full unused ACV | Fixed: NOT STARTED status and unavailable forecast-dependent values throughout |
 | P2 | An old export could be mistaken for a current monitor | Fixed: Refresh source, read timestamp, snapshot type, stale/future-date notices. As-of stays source-driven |
